@@ -1,13 +1,10 @@
-import { useEffect } from "react";
+import Login from "./pages/Login";
 
+/**
+ * Root application component.
+ */
 function App() {
-  useEffect(() => {
-    fetch("http://127.0.0.1:8000/health")
-      .then(r => r.json())
-      .then(data => console.log(data));
-  }, []);
-
-  return <div>Calibration App</div>;
+  return <Login />;
 }
 
 export default App;
