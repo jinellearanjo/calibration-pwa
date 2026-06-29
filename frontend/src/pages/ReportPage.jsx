@@ -9,7 +9,7 @@ import { downloadReport } from "../api";
  *
  * @param {Object} props
  * @param {string} props.status - The current validation status of the session.
- */
+ */ 
 export function ReportPage({ status }) {
   const { sessionId } = useParams();
 
