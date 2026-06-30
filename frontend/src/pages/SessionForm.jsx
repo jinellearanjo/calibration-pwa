@@ -1,16 +1,17 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 
 /**
  * SessionForm component.
  * Allows the user to create a new calibration session by entering
  * the date, technician name, and environmental conditions.
- * Submits data to the backend via a function imported from api.js.
  *
  * @param {Object} props
  * @param {Function} props.onSubmit - Called with form data on valid submission.
  */
 function SessionForm({ onSubmit }) {
+  const navigate = useNavigate();
   const [formData, setFormData] = useState({
     instrument_id: "",
     date: "",
@@ -19,11 +20,11 @@ function SessionForm({ onSubmit }) {
     humidity_pct: "",
     notes: "",
   });
-
   const [errors, setErrors] = useState({});
 
+  const requiredFields = ["instrument_id", "date", "technician", "temperature_c", "humidity_pct"];
+
   function validate(field, value) {
-    // Each field returns an error string or empty string if valid.
     if (field === "instrument_id" && !value.trim()) return "Instrument ID is required.";
     if (field === "date" && !value) return "Date is required.";
     if (field === "technician" && !value.trim()) return "Technician name is required.";
@@ -45,88 +46,84 @@ function SessionForm({ onSubmit }) {
   }
 
   const hasErrors = Object.values(errors).some(Boolean);
-  const requiredFields = ["instrument_id", "date", "technician", "temperature_c", "humidity_pct"];
   const allFilled = requiredFields.every(f => formData[f] !== "");
 
   function handleSubmit() {
-    // Run full validation on all fields before submitting.
     const freshErrors = {};
-    requiredFields.forEach(f => {
-      freshErrors[f] = validate(f, formData[f]);
-    });
+    requiredFields.forEach(f => { freshErrors[f] = validate(f, formData[f]); });
     setErrors(freshErrors);
     if (Object.values(freshErrors).some(Boolean)) return;
     onSubmit(formData);
   }
 
   return (
-    <div style={{ fontFamily: "sans-serif" }}>
+    <div style={{ minHeight: "100vh", background: "var(--color-bg)" }}>
       <Navbar />
-      <div style={{ maxWidth: 560, margin: "40px auto", padding: "0 24px" }}>
-        <h2 style={{ marginBottom: 24 }}>Calibration Session</h2>
+      <div style={{ maxWidth: 600, margin: "0 auto", padding: "48px 32px" }}>
 
-        <Field
-          label="Instrument ID"
-          id="instrument_id"
-          value={formData.instrument_id}
-          onChange={v => updateField("instrument_id", v)}
-          error={errors.instrument_id}
-        />
-        <Field
-          label="Date"
-          id="date"
-          type="date"
-          value={formData.date}
-          onChange={v => updateField("date", v)}
-          error={errors.date}
-        />
-        <Field
-          label="Technician"
-          id="technician"
-          value={formData.technician}
-          onChange={v => updateField("technician", v)}
-          error={errors.technician}
-        />
-        <Field
-          label="Temperature (°C)"
-          id="temperature_c"
-          type="number"
-          value={formData.temperature_c}
-          onChange={v => updateField("temperature_c", v)}
-          error={errors.temperature_c}
-        />
-        <Field
-          label="Humidity (%)"
-          id="humidity_pct"
-          type="number"
-          value={formData.humidity_pct}
-          onChange={v => updateField("humidity_pct", v)}
-          error={errors.humidity_pct}
-        />
-        <Field
-          label="Notes (optional)"
-          id="notes"
-          value={formData.notes}
-          onChange={v => updateField("notes", v)}
-          error={errors.notes}
-        />
+        {/* Page header */}
+        <div style={{ marginBottom: 32 }}>
+          <p style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--color-accent)", marginBottom: 8 }}>
+            Step 03
+          </p>
+          <h1 style={{ fontSize: 26, fontWeight: 700, color: "var(--color-primary)", marginBottom: 8 }}>
+            Calibration Session
+          </h1>
+          <p style={{ color: "var(--color-muted)", fontSize: 14 }}>
+            Set the session date, technician, and environmental conditions.
+          </p>
+        </div>
 
-        <button
-          onClick={handleSubmit}
-          disabled={hasErrors || !allFilled}
-          style={{
-            width: "100%",
-            padding: "12px",
-            marginTop: 8,
-            background: hasErrors || !allFilled ? "#ccc" : "black",
-            color: "white",
-            border: "none",
-            cursor: hasErrors || !allFilled ? "not-allowed" : "pointer",
-            fontSize: 14,
-          }}
-        >
-          Create Session
-        </button>
+        {/* Form card */}
+        <div style={{
+          background: "var(--color-surface)",
+          border: "1px solid var(--color-border)",
+          borderRadius: "var(--radius)",
+          padding: "32px",
+          boxShadow: "var(--shadow-sm)",
+        }}>
+          <Field label="Instrument ID" id="instrument_id" value={formData.instrument_id} onChange={v => updateField("instrument_id", v)} error={errors.instrument_id} />
+          <Field label="Date" id="date" type="date" value={formData.date} onChange={v => updateField("date", v)} error={errors.date} />
+          <Field label="Technician" id="technician" value={formData.technician} onChange={v => updateField("technician", v)} error={errors.technician} />
+          <Field label="Temperature (°C)" id="temperature_c" type="number" value={formData.temperature_c} onChange={v => updateField("temperature_c", v)} error={errors.temperature_c} />
+          <Field label="Humidity (%)" id="humidity_pct" type="number" value={formData.humidity_pct} onChange={v => updateField("humidity_pct", v)} error={errors.humidity_pct} />
+          <Field label="Notes (optional)" id="notes" value={formData.notes} onChange={v => updateField("notes", v)} error={errors.notes} />
+
+          <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
+            <button
+              onClick={handleSubmit}
+              disabled={hasErrors || !allFilled}
+              style={{
+                flex: 1,
+                padding: "11px",
+                background: hasErrors || !allFilled ? "var(--color-border)" : "var(--color-primary)",
+                color: "white",
+                border: "none",
+                borderRadius: "var(--radius)",
+                fontWeight: 600,
+                fontSize: 14,
+                cursor: hasErrors || !allFilled ? "not-allowed" : "pointer",
+              }}
+            >
+              Create Session
+            </button>
+            <button
+              onClick={() => navigate("/dashboard")}
+              style={{
+                padding: "11px 20px",
+                background: "white",
+                color: "var(--color-text)",
+                border: "1px solid var(--color-border)",
+                borderRadius: "var(--radius)",
+                fontSize: 14,
+                fontWeight: 500,
+                cursor: "pointer",
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -134,23 +131,12 @@ function SessionForm({ onSubmit }) {
 
 /**
  * Field component.
- * A labelled input with inline error display.
- *
- * @param {Object} props
- * @param {string} props.label - Field label.
- * @param {string} props.id - Input id.
- * @param {string} props.value - Current value.
- * @param {Function} props.onChange - Change handler.
- * @param {string} props.error - Error message if invalid.
- * @param {string} props.type - Input type.
+ * Labelled input with inline error display.
  */
 function Field({ label, id, value, onChange, error, type = "text" }) {
   return (
-    <div style={{ marginBottom: 16 }}>
-      <label
-        htmlFor={id}
-        style={{ display: "block", fontWeight: "bold", marginBottom: 4, fontSize: 13 }}
-      >
+    <div style={{ marginBottom: 20 }}>
+      <label htmlFor={id} style={{ display: "block", fontSize: 13, fontWeight: 500, marginBottom: 6, color: "var(--color-text)" }}>
         {label}
       </label>
       <input
@@ -158,16 +144,10 @@ function Field({ label, id, value, onChange, error, type = "text" }) {
         type={type}
         value={value}
         onChange={e => onChange(e.target.value)}
-        style={{
-          width: "100%",
-          padding: "8px 10px",
-          border: `1px solid ${error ? "red" : "black"}`,
-          fontSize: 14,
-          boxSizing: "border-box",
-        }}
+        style={{ borderColor: error ? "var(--color-error)" : undefined }}
       />
       {error && (
-        <span style={{ color: "red", fontSize: 12, marginTop: 2, display: "block" }}>
+        <span style={{ color: "var(--color-error)", fontSize: 12, marginTop: 4, display: "block" }}>
           {error}
         </span>
       )}
