@@ -1,40 +1,90 @@
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { signOut } from "../auth";
 
 /**
  * Navbar component.
- * Displays the application name and a sign out button on every protected page.
- * Redirects to the login page after successful sign out.
+ * Displays the Instruworks logo, app name, and sign out button.
+ * Highlights the active route with a left border accent.
  */
 function Navbar() {
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleSignOut = async () => {
     await signOut();
-    // Redirect to login after signing out.
     navigate("/login");
   };
 
+  const navLinks = [
+    { label: "Dashboard", path: "/dashboard" },
+    { label: "History", path: "/history" },
+  ];
+
   return (
     <nav style={{
+      background: "var(--color-surface)",
+      borderBottom: "1px solid var(--color-border)",
+      boxShadow: "var(--shadow-sm)",
+      padding: "0 32px",
       display: "flex",
-      justifyContent: "space-between",
       alignItems: "center",
-      padding: "12px 24px",
-      borderBottom: "1px solid black",
-      fontFamily: "sans-serif",
+      justifyContent: "space-between",
+      height: 60,
+      position: "sticky",
+      top: 0,
+      zIndex: 100,
     }}>
-      <span style={{ fontWeight: "bold", fontSize: 16 }}>
-        Calibration Uncertainty Calculator
-      </span>
+      {/* Left: logo and nav links */}
+      <div style={{ display: "flex", alignItems: "center", gap: 32 }}>
+        <div
+          style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}
+          onClick={() => navigate("/dashboard")}
+        >
+          <img
+            src="/logo.png"
+            alt="Instruworks"
+            style={{ height: 32, objectFit: "contain" }}
+          />
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          {navLinks.map(link => {
+            const isActive = location.pathname === link.path;
+            return (
+              <button
+                key={link.path}
+                onClick={() => navigate(link.path)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  padding: "6px 14px",
+                  color: isActive ? "var(--color-primary)" : "var(--color-muted)",
+                  fontWeight: isActive ? 600 : 400,
+                  borderBottom: isActive ? "2px solid var(--color-primary)" : "2px solid transparent",
+                  borderRadius: 0,
+                  fontSize: 14,
+                  cursor: "pointer",
+                  transition: "color 0.15s",
+                }}
+              >
+                {link.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Right: sign out */}
       <button
         onClick={handleSignOut}
         style={{
           background: "none",
-          border: "1px solid black",
-          padding: "6px 14px",
-          cursor: "pointer",
-          fontSize: 14,
+          border: "1px solid var(--color-border)",
+          padding: "7px 16px",
+          color: "var(--color-text)",
+          borderRadius: "var(--radius)",
+          fontSize: 13,
+          fontWeight: 500,
         }}
       >
         Sign Out
