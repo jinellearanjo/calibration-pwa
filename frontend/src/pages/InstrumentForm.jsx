@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useUnsavedWarning } from "../hooks/useUnsavedWarning";
 import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 
@@ -12,7 +13,7 @@ import Navbar from "../components/Navbar";
  * @param {Function} props.onSubmit - Called with combined form data on valid submission.
  */
 function InstrumentForm({ onSubmit }) {
-  const navigate = useNavigate();
+  const { setIsDirty, safeNavigate } = useUnsavedWarning();
 
   const [refData, setRefData] = useState({
     certificate_number: "",
@@ -62,11 +63,15 @@ function InstrumentForm({ onSubmit }) {
   function updateRef(field, value) {
     setRefData(prev => ({ ...prev, [field]: value }));
     setErrors(prev => ({ ...prev, [field]: validate(field, value) }));
+    // Mark form as dirty when any field changes.
+    setIsDirty(true);
   }
 
   function updateUuc(field, value) {
     setUucData(prev => ({ ...prev, [field]: value }));
     setErrors(prev => ({ ...prev, [field]: validate(field, value) }));
+    // Mark form as dirty when any field changes.
+    setIsDirty(true);
   }
 
   const hasErrors = Object.values(errors).some(Boolean);
@@ -174,7 +179,7 @@ function InstrumentForm({ onSubmit }) {
             Register Instrument
           </button>
           <button
-            onClick={() => navigate("/dashboard")}
+            onClick={() => safeNavigate("/dashboard")}
             style={{
               padding: "11px 20px",
               background: "white",

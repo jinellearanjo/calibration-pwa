@@ -1,3 +1,4 @@
+import { useUnsavedWarning } from "../hooks/useUnsavedWarning";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
@@ -12,6 +13,7 @@ import Navbar from "../components/Navbar";
  */
 function SessionForm({ onSubmit }) {
   const navigate = useNavigate();
+  const { setIsDirty, safeNavigate } = useUnsavedWarning();
   const [formData, setFormData] = useState({
     instrument_id: "",
     date: "",
@@ -41,8 +43,10 @@ function SessionForm({ onSubmit }) {
   }
 
   function updateField(field, value) {
-    setFormData(prev => ({ ...prev, [field]: value }));
-    setErrors(prev => ({ ...prev, [field]: validate(field, value) }));
+  setFormData(prev => ({ ...prev, [field]: value }));
+  setErrors(prev => ({ ...prev, [field]: validate(field, value) }));
+  // Mark form as dirty when any field changes.
+  setIsDirty(true);
   }
 
   const hasErrors = Object.values(errors).some(Boolean);
@@ -108,7 +112,7 @@ function SessionForm({ onSubmit }) {
               Create Session
             </button>
             <button
-              onClick={() => navigate("/dashboard")}
+              onClick={() => safeNavigate("/dashboard")}
               style={{
                 padding: "11px 20px",
                 background: "white",

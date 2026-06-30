@@ -1,3 +1,4 @@
+import { useUnsavedWarning } from "../hooks/useUnsavedWarning";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
@@ -19,7 +20,7 @@ function ReadingsForm({
   pointCount = 5,
   onRecalculate,
 }) {
-  const navigate = useNavigate();
+  const { setIsDirty, safeNavigate } = useUnsavedWarning();
 
   const initialRows = Array.from({ length: pointCount }, (_, i) => ({
     point_number: i + 1,
@@ -35,6 +36,7 @@ function ReadingsForm({
   const [autoGeneratePoints, setAutoGeneratePoints] = useState(true);
 
   function updateRow(index, field, value) {
+    setIsDirty(true); // Mark form as dirty when any reading changes.
     setRows(prev => {
       const updated = [...prev];
       updated[index] = { ...updated[index], [field]: value };
@@ -43,14 +45,12 @@ function ReadingsForm({
       const down = parseFloat(updated[index].measured_value_down);
       const nominal = parseFloat(updated[index].nominal_value);
 
-      // Recalculate mean error and hysteresis on every keystroke per spec.
       if (!isNaN(up) && !isNaN(down) && !isNaN(nominal)) {
         updated[index].mean_error = ((up + down) / 2 - nominal).toFixed(4);
       } else {
         updated[index].mean_error = null;
       }
 
-      // Hysteresis: absolute difference between ascending and descending.
       if (!isNaN(up) && !isNaN(down)) {
         updated[index].hysteresis = Math.abs(up - down).toFixed(4);
       } else {
