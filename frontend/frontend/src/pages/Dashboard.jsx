@@ -47,6 +47,10 @@ function Dashboard() {
             label="7. Generate Report"
             onClick={() => navigate("/report")}
           />
+          <DashboardButton
+            label="Session History"
+            onClick={() => navigate("/history")}
+          />
         </div>
       </div>
     </div>
