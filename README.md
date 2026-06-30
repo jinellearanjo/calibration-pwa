@@ -10,11 +10,11 @@ A Progressive Web App for calculating, validating, and generating reports for me
 - Excel Reports: openpyxl
 
 ## Team
-- P1 (Architecture Lead): jinellearanjo
-- P2 (Data Entry):
-- P3 (Calculation Engine):
-- P4 (Validation):
-- P5 (Reporting):
+- P1 (Architecture Lead): Jinelle Aranjo
+- P2 (Data Entry): Bushra Sheikh
+- P3 (Calculation Engine): Aamna Sehrish
+- P4 (Validation): Bhoomika Dutta
+- P5 (Reporting): Adhitya Kumar Rajgopal
 
 ## Setup
 Instructions to be added during integration week.
