@@ -1,6 +1,5 @@
 import { useUnsavedWarning } from "../hooks/useUnsavedWarning";
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 
 /**
@@ -231,7 +230,7 @@ function ReadingsForm({
             Recalculate Metrology Uncertainty
           </button>
           <button
-            onClick={() => navigate("/dashboard")}
+            onClick={() => safeNavigate("/dashboard")}
             style={{
               padding: "13px 20px",
               background: "white",

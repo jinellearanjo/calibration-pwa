@@ -1,6 +1,5 @@
 import { useUnsavedWarning } from "../hooks/useUnsavedWarning";
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 
 /**
@@ -12,7 +11,6 @@ import Navbar from "../components/Navbar";
  * @param {Function} props.onSubmit - Called with form data on valid submission.
  */
 function SessionForm({ onSubmit }) {
-  const navigate = useNavigate();
   const { setIsDirty, safeNavigate } = useUnsavedWarning();
   const [formData, setFormData] = useState({
     instrument_id: "",

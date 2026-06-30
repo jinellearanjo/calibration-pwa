@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useUnsavedWarning } from "../hooks/useUnsavedWarning";
-import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 
 /**
