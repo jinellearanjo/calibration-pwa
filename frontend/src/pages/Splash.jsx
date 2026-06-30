@@ -36,14 +36,13 @@ function Splash() {
         src="/logo.png"
         alt="Instruworks"
         style={{
-          height: 72,
-          marginBottom: 48,
-          filter: "brightness(0) invert(1)",
-          opacity: visible ? 1 : 0,
-          transform: visible ? "translateY(0)" : "translateY(12px)",
-          transition: "opacity 0.8s ease 0.2s, transform 0.8s ease 0.2s",
-        }}
-      />
+            height: 84,
+            marginBottom: 50,
+            opacity: visible ? 1 : 0,
+            transform: visible ? "translateY(0)" : "translateY(12px)",
+            transition: "opacity 0.8s ease 0.8s, transform 0.8s ease 0.8s",
+  }}
+/>
 
       {/* Divider */}
       <div style={{

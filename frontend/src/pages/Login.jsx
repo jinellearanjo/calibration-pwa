@@ -36,7 +36,7 @@ function Login() {
   return (
     <div style={{
       minHeight: "100vh",
-      background: "var(--color-bg)",
+      background: "#1B3A6B",
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
