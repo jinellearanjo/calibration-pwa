@@ -1,0 +1,197 @@
+const BASE_URL = "http://127.0.0.1:8000";
+
+/**
+ * Get the auth token from Supabase session for API requests.
+ * @returns {Promise<string|null>} The JWT token or null if not logged in.
+ */
+async function getToken() {
+  const { supabase } = await import("./auth");
+  const { data } = await supabase.auth.getSession();
+  return data?.session?.access_token || null;
+}
+
+/**
+ * Make an authenticated request to the backend API.
+ * @param {string} path - API path e.g. /api/sessions
+ * @param {Object} options - Fetch options
+ * @returns {Promise<any>} Parsed JSON response
+ */
+async function request(path, options = {}) {
+  const token = await getToken();
+  const response = await fetch(`${BASE_URL}${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...options.headers,
+    },
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: "Request failed." }));
+    throw new Error(error.detail || "Request failed.");
+  }
+  return response.json();
+}
+
+// ── Instruments ───────────────────────────────────────────────────────────────
+
+/**
+ * Create a new instrument record.
+ * @param {Object} data - Instrument fields matching the instruments table.
+ * @returns {Promise<Object>} The created instrument record.
+ */
+export async function createInstrument(data) {
+  return request("/api/instruments", { method: "POST", body: JSON.stringify(data) });
+}
+
+/**
+ * Fetch a single instrument by ID.
+ * @param {string} instrumentId - UUID of the instrument.
+ * @returns {Promise<Object>} The instrument record.
+ */
+export async function getInstrument(instrumentId) {
+  return request(`/api/instruments/${instrumentId}`);
+}
+
+// ── Calibration Reference ─────────────────────────────────────────────────────
+
+/**
+ * Create a calibration reference record for a session.
+ * @param {Object} data - Calibration reference fields.
+ * @returns {Promise<Object>} The created record.
+ */
+export async function createCalibrationReference(data) {
+  return request("/api/calibration-reference", { method: "POST", body: JSON.stringify(data) });
+}
+
+// ── Sessions ──────────────────────────────────────────────────────────────────
+
+/**
+ * Create a new calibration session.
+ * @param {Object} data - Session fields matching the calibration_sessions table.
+ * @returns {Promise<Object>} The created session record.
+ */
+export async function createSession(data) {
+  return request("/api/sessions", { method: "POST", body: JSON.stringify(data) });
+}
+
+/**
+ * List all calibration sessions for the current user.
+ * @returns {Promise<Array>} List of session records.
+ */
+export async function listSessions() {
+  return request("/api/sessions");
+}
+
+/**
+ * Fetch a single calibration session by ID.
+ * @param {string} sessionId - UUID of the session.
+ * @returns {Promise<Object>} The session record.
+ */
+export async function getSession(sessionId) {
+  return request(`/api/sessions/${sessionId}`);
+}
+
+// ── Readings ──────────────────────────────────────────────────────────────────
+
+/**
+ * Create a single calibration reading record.
+ * @param {Object} data - Reading fields matching the readings table.
+ * @returns {Promise<Object>} The created reading record.
+ */
+export async function createReading(data) {
+  return request("/api/readings", { method: "POST", body: JSON.stringify(data) });
+}
+
+/**
+ * Fetch all readings for a calibration session.
+ * @param {string} sessionId - UUID of the session.
+ * @returns {Promise<Array>} List of reading records.
+ */
+export async function getReadings(sessionId) {
+  return request(`/api/sessions/${sessionId}/readings`);
+}
+
+// ── Master Instruments ────────────────────────────────────────────────────────
+
+/**
+ * List all master instruments for the current user.
+ * @returns {Promise<Array>} List of master instrument records.
+ */
+export async function listMasterInstruments() {
+  return request("/api/master-instruments");
+}
+
+/**
+ * Fetch a single master instrument by ID.
+ * @param {string} masterId - UUID of the master instrument.
+ * @returns {Promise<Object>} The master instrument record.
+ */
+export async function selectMaster(masterId) {
+  return request(`/api/master-instruments/${masterId}`);
+}
+
+/**
+ * Save a new master instrument record.
+ * @param {Object} data - Master instrument fields.
+ * @returns {Promise<Object>} The created master instrument record.
+ */
+export async function saveMaster(data) {
+  return request("/api/master-instruments", { method: "POST", body: JSON.stringify(data) });
+}
+
+/**
+ * Delete a master instrument record.
+ * @param {string} masterId - UUID of the master instrument to delete.
+ * @returns {Promise<Object>} Confirmation message.
+ */
+export async function deleteMaster(masterId) {
+  return request(`/api/master-instruments/${masterId}`, { method: "DELETE" });
+}
+
+// ── Uncertainty Budget ────────────────────────────────────────────────────────
+
+/**
+ * Fetch the uncertainty budget for a session.
+ * @param {string} sessionId - UUID of the session.
+ * @returns {Promise<Object>} The uncertainty budget record.
+ */
+export async function getUncertaintyBudget(sessionId) {
+  return request(`/api/sessions/${sessionId}/budget`);
+}
+
+// ── Validation ────────────────────────────────────────────────────────────────
+
+/**
+ * Validate a calibration session and get the compliance result.
+ * @param {string} sessionId - UUID of the session.
+ * @returns {Promise<Object>} Validation result with status and flags.
+ */
+export async function getResults(sessionId) {
+  return request(`/api/sessions/${sessionId}/validate`);
+}
+
+// ── Reports ───────────────────────────────────────────────────────────────────
+
+/**
+ * Download a calibration certificate as PDF or Excel.
+ * @param {string} sessionId - UUID of the session.
+ * @param {string} format - Either "pdf" or "excel".
+ */
+export async function downloadReport(sessionId, format) {
+  const token = await getToken();
+  const response = await fetch(
+    `${BASE_URL}/api/sessions/${sessionId}/report?format=${format}`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!response.ok) throw new Error("Failed to generate report.");
+
+  // Trigger browser download from the streamed file response.
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `calibration_certificate.${format === "excel" ? "xlsx" : "pdf"}`;
+  link.click();
+  window.URL.revokeObjectURL(url);
+}
