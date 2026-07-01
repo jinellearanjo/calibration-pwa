@@ -1,5 +1,6 @@
-import { useMemo, useRef, useState } from "react"
-import { saveMaster, deleteMaster, selectMaster } from "../api"
+import { useMemo, useRef, useState, useEffect } from "react"
+import { saveMaster, deleteMaster, selectMaster, listMasterInstruments } from "../api"
+import Navbar from "../components/Navbar"
 
 const TOKEN = {
   fontFamily: "'Inter', 'Segoe UI', sans-serif",
@@ -13,26 +14,15 @@ const TOKEN = {
   colorMuted: "#6b7280",
   colorError: "#dc2626",
   colorPrimary: "#2563eb",
-  colorPrimaryHover: "#1d4ed8",
   colorDanger: "#dc2626",
-  colorDangerHover: "#b91c1c",
   radius: "6px",
   gap: "16px",
 }
 
 const EMPTY_MASTER = {
-  name: "",
-  make: "",
-  model: "",
-  serial_number: "",
-  asset_number: "",
-  traceability_chain: "",
-  uncertainty_u: "",
-  accuracy: "",
-  resolution: "",
-  cal_due_date: "",
-  claimed_cmc: "",
-  instrument_type: "",
+  name: "", make: "", model: "", serial_number: "", asset_number: "",
+  traceability_chain: "", uncertainty_u: "", accuracy: "", resolution: "",
+  cal_due_date: "", claimed_cmc: "", instrument_type: "",
 }
 
 function validateField(fieldName, value) {
@@ -52,13 +42,13 @@ function validateField(fieldName, value) {
  * and save / delete actions. All mutations go through api.js.
  */
 export default function MasterForm({
-  masters = [],
   budgetFormatStatus = "No budget format loaded.",
   reportFormatStatus = "No report format loaded.",
   onUploadTemplate,
   onMasterSaved,
   onMasterDeleted,
 }) {
+  const [masters, setMasters] = useState([])
   const [formData, setFormData] = useState(EMPTY_MASTER)
   const [errors, setErrors] = useState({})
   const [searchQuery, setSearchQuery] = useState("")
@@ -67,6 +57,12 @@ export default function MasterForm({
   const [isSaving, setIsSaving] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const fileInputRef = useRef(null)
+
+  useEffect(() => {
+    listMasterInstruments()
+      .then(data => setMasters(data.map(m => ({ id: m.id, label: m.name, data: m }))))
+      .catch(err => console.error("Failed to load master instruments:", err))
+  }, [])
 
   const filteredMasters = useMemo(() => {
     const query = searchQuery.trim().toLowerCase()
@@ -78,8 +74,7 @@ export default function MasterForm({
 
   function updateField(columnName, value) {
     setFormData((prev) => ({ ...prev, [columnName]: value }))
-    const errorMessage = validateField(columnName, value)
-    setErrors((prev) => ({ ...prev, [columnName]: errorMessage }))
+    setErrors((prev) => ({ ...prev, [columnName]: validateField(columnName, value) }))
   }
 
   async function handleSelectMaster(masterOption) {
@@ -88,23 +83,21 @@ export default function MasterForm({
     setSelectedMasterId(masterOption.id)
     const masterRecord = await selectMaster(masterOption.id)
     if (masterRecord) {
-      const sanitised = Object.fromEntries(
-        Object.keys(EMPTY_MASTER).map((key) => [key, masterRecord[key] ?? ""])
-      )
+      const sanitised = Object.fromEntries(Object.keys(EMPTY_MASTER).map((key) => [key, masterRecord[key] ?? ""]))
       setFormData(sanitised)
       setErrors({})
     }
   }
 
   async function handleSave() {
-    const freshErrors = Object.fromEntries(
-      Object.entries(formData).map(([key, value]) => [key, validateField(key, value)])
-    )
+    const freshErrors = Object.fromEntries(Object.entries(formData).map(([key, value]) => [key, validateField(key, value)]))
     setErrors(freshErrors)
     if (Object.values(freshErrors).some(Boolean)) return
     setIsSaving(true)
     try {
       await saveMaster(formData)
+      const data = await listMasterInstruments()
+      setMasters(data.map(m => ({ id: m.id, label: m.name, data: m })))
       onMasterSaved?.()
     } finally {
       setIsSaving(false)
@@ -120,15 +113,15 @@ export default function MasterForm({
       setSearchQuery("")
       setSelectedMasterId(null)
       setErrors({})
+      const data = await listMasterInstruments()
+      setMasters(data.map(m => ({ id: m.id, label: m.name, data: m })))
       onMasterDeleted?.()
     } finally {
       setIsDeleting(false)
     }
   }
 
-  function handleUploadClick() {
-    fileInputRef.current?.click()
-  }
+  function handleUploadClick() { fileInputRef.current?.click() }
 
   function handleFileChange(event) {
     const file = event.target.files?.[0]
@@ -137,140 +130,85 @@ export default function MasterForm({
   }
 
   return (
-    <section
-      aria-labelledby="master-form-heading"
-      style={{
-        fontFamily: TOKEN.fontFamily,
-        fontSize: TOKEN.fontSize,
-        color: TOKEN.colorText,
-        background: TOKEN.colorBg,
-        borderRadius: TOKEN.radius,
-        border: `1px solid ${TOKEN.colorBorder}`,
-        padding: "24px",
-        maxWidth: "860px",
-      }}
-    >
-      <h2 id="master-form-heading" style={{ margin: "0 0 20px", fontSize: "1.125rem", fontWeight: 600 }}>
-        Master Traceability Details
-      </h2>
+    <div style={{ minHeight: "100vh", background: "var(--color-bg)" }}>
+      <Navbar />
+      <div style={{ maxWidth: 960, margin: "0 auto", padding: "48px 32px" }}>
+        <div style={{ marginBottom: 32 }}>
+          <p style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--color-accent)", marginBottom: 8 }}>Step 02</p>
+          <h1 style={{ fontSize: 26, fontWeight: 700, color: "var(--color-primary)", marginBottom: 8 }}>Master Instrument</h1>
+          <p style={{ color: "var(--color-muted)", fontSize: 14 }}>Search, select, or register the reference standard used for this calibration.</p>
+        </div>
 
-      {/* Search + Save row */}
-      <div style={{ display: "flex", gap: TOKEN.gap, alignItems: "flex-start", marginBottom: TOKEN.gap }}>
-        <div style={{ position: "relative", flex: 1 }}>
-          <FloatingLabelField
-            id="master-search"
-            label="Search or Select Master"
-            value={searchQuery}
-            onChange={(value) => { setSearchQuery(value); setDropdownOpen(true) }}
-            onFocus={() => setDropdownOpen(true)}
-            onBlur={() => setTimeout(() => setDropdownOpen(false), 150)}
-            inputProps={{ role: "combobox", "aria-expanded": dropdownOpen, "aria-controls": "master-search-list", autoComplete: "off" }}
-          />
-          {dropdownOpen && (
-            <div
-              id="master-search-list"
-              role="listbox"
-              style={{
-                position: "absolute", top: "100%", left: 0, right: 0, zIndex: 20,
-                background: TOKEN.colorBg, border: `1px solid ${TOKEN.colorBorder}`,
-                borderTop: "none", borderRadius: `0 0 ${TOKEN.radius} ${TOKEN.radius}`,
-                maxHeight: "220px", overflowY: "auto", boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
-              }}
-            >
-              {filteredMasters.length === 0 ? (
-                <div style={{ padding: "10px 14px", color: TOKEN.colorMuted, fontSize: TOKEN.fontSizeLabel }}>
-                  No masters found
+        <section aria-labelledby="master-form-heading" style={{ fontFamily: TOKEN.fontFamily, fontSize: TOKEN.fontSize, color: TOKEN.colorText, background: TOKEN.colorBg, borderRadius: TOKEN.radius, border: `1px solid ${TOKEN.colorBorder}`, padding: "24px" }}>
+          <h2 id="master-form-heading" style={{ margin: "0 0 20px", fontSize: "1.125rem", fontWeight: 600 }}>Master Traceability Details</h2>
+
+          <div style={{ display: "flex", gap: TOKEN.gap, alignItems: "flex-start", marginBottom: TOKEN.gap }}>
+            <div style={{ position: "relative", flex: 1 }}>
+              <FloatingLabelField
+                id="master-search" label="Search or Select Master" value={searchQuery}
+                onChange={(value) => { setSearchQuery(value); setDropdownOpen(true) }}
+                onFocus={() => setDropdownOpen(true)}
+                onBlur={() => setTimeout(() => setDropdownOpen(false), 150)}
+                inputProps={{ role: "combobox", "aria-expanded": dropdownOpen, "aria-controls": "master-search-list", autoComplete: "off" }}
+              />
+              {dropdownOpen && (
+                <div id="master-search-list" role="listbox" style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 20, background: TOKEN.colorBg, border: `1px solid ${TOKEN.colorBorder}`, borderTop: "none", borderRadius: `0 0 ${TOKEN.radius} ${TOKEN.radius}`, maxHeight: "220px", overflowY: "auto", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}>
+                  {filteredMasters.length === 0 ? (
+                    <div style={{ padding: "10px 14px", color: TOKEN.colorMuted, fontSize: TOKEN.fontSizeLabel }}>No masters found</div>
+                  ) : filteredMasters.map((masterOption) => (
+                    <button key={masterOption.id} type="button" role="option" aria-selected={masterOption.id === selectedMasterId} onMouseDown={(e) => e.preventDefault()} onClick={() => handleSelectMaster(masterOption)}
+                      style={{ display: "block", width: "100%", textAlign: "left", padding: "9px 14px", background: masterOption.id === selectedMasterId ? "#eff6ff" : "transparent", border: "none", cursor: "pointer", fontSize: TOKEN.fontSize, color: TOKEN.colorText }}>
+                      {masterOption.label}
+                    </button>
+                  ))}
                 </div>
-              ) : (
-                filteredMasters.map((masterOption) => (
-                  <button
-                    key={masterOption.id}
-                    type="button"
-                    role="option"
-                    aria-selected={masterOption.id === selectedMasterId}
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => handleSelectMaster(masterOption)}
-                    style={{
-                      display: "block", width: "100%", textAlign: "left", padding: "9px 14px",
-                      background: masterOption.id === selectedMasterId ? "#eff6ff" : "transparent",
-                      border: "none", cursor: "pointer", fontSize: TOKEN.fontSize, color: TOKEN.colorText,
-                    }}
-                  >
-                    {masterOption.label}
-                  </button>
-                ))
               )}
             </div>
-          )}
-        </div>
+            <button type="button" disabled={hasValidationErrors || isSaving} onClick={handleSave} style={primaryButtonStyle(hasValidationErrors || isSaving)}>
+              {isSaving ? "Saving…" : "Save Current"}
+            </button>
+          </div>
 
-        <button
-          type="button"
-          disabled={hasValidationErrors || isSaving}
-          onClick={handleSave}
-          style={primaryButtonStyle(hasValidationErrors || isSaving)}
-        >
-          {isSaving ? "Saving…" : "Save Current"}
-        </button>
-      </div>
+          <div style={{ display: "flex", gap: TOKEN.gap, flexWrap: "wrap", marginBottom: TOKEN.gap }}>
+            <button type="button" disabled={!selectedMasterId || isDeleting} onClick={handleDelete} style={outlineButtonStyle(TOKEN.colorDanger, !selectedMasterId || isDeleting)}>
+              <TrashIcon />{isDeleting ? "Deleting…" : "Delete Selected Master"}
+            </button>
+            <button type="button" onClick={handleUploadClick} style={outlineButtonStyle(TOKEN.colorPrimary, false)}>
+              <UploadIcon />Upload Reference Format Template (.pdf / .txt)
+            </button>
+            <input ref={fileInputRef} type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={handleFileChange} />
+          </div>
 
-      {/* Action buttons */}
-      <div style={{ display: "flex", gap: TOKEN.gap, flexWrap: "wrap", marginBottom: TOKEN.gap }}>
-        <button
-          type="button"
-          disabled={!selectedMasterId || isDeleting}
-          onClick={handleDelete}
-          style={outlineButtonStyle(TOKEN.colorDanger, !selectedMasterId || isDeleting)}
-        >
-          <TrashIcon />
-          {isDeleting ? "Deleting…" : "Delete Selected Master"}
-        </button>
-        <button type="button" onClick={handleUploadClick} style={outlineButtonStyle(TOKEN.colorPrimary, false)}>
-          <UploadIcon />
-          Upload Reference Format Template (.pdf / .txt)
-        </button>
-        <input ref={fileInputRef} type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={handleFileChange} />
-      </div>
+          <div style={{ marginBottom: "20px" }}>
+            <StatusLine text={budgetFormatStatus} />
+            <StatusLine text={reportFormatStatus} />
+          </div>
 
-      {/* Template status lines */}
-      <div style={{ marginBottom: "20px" }}>
-        <StatusLine text={budgetFormatStatus} />
-        <StatusLine text={reportFormatStatus} />
-      </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: TOKEN.gap }}>
+            <FloatingLabelField id="name" label="Master Instrument Name / Tag *" value={formData.name} onChange={(v) => updateField("name", v)} error={errors.name} />
+            <FloatingLabelField id="make" label="Make" value={formData.make} onChange={(v) => updateField("make", v)} error={errors.make} />
+            <FloatingLabelField id="model" label="Model" value={formData.model} onChange={(v) => updateField("model", v)} error={errors.model} />
+            <FloatingLabelField id="serial_number" label="Serial No." value={formData.serial_number} onChange={(v) => updateField("serial_number", v)} error={errors.serial_number} />
+            <FloatingLabelField id="asset_number" label="Asset No." value={formData.asset_number} onChange={(v) => updateField("asset_number", v)} error={errors.asset_number} />
+            <FloatingLabelField id="instrument_type" label="Instrument Type" value={formData.instrument_type} onChange={(v) => updateField("instrument_type", v)} error={errors.instrument_type} />
+            <div style={{ gridColumn: "1 / -1" }}>
+              <FloatingLabelField id="traceability_chain" label="Traceability / Agency Reference Chain" value={formData.traceability_chain} onChange={(v) => updateField("traceability_chain", v)} error={errors.traceability_chain} />
+            </div>
+            <FloatingLabelField id="uncertainty_u" label="Uncertainty (u)" type="number" value={formData.uncertainty_u} onChange={(v) => updateField("uncertainty_u", v)} error={errors.uncertainty_u} />
+            <FloatingLabelField id="accuracy" label="Accuracy" type="number" value={formData.accuracy} onChange={(v) => updateField("accuracy", v)} error={errors.accuracy} />
+            <FloatingLabelField id="resolution" label="Resolution" type="number" value={formData.resolution} onChange={(v) => updateField("resolution", v)} error={errors.resolution} />
+            <FloatingLabelField id="cal_due_date" label="Cal Due Date" type="date" value={formData.cal_due_date} onChange={(v) => updateField("cal_due_date", v)} error={errors.cal_due_date} />
+            <FloatingLabelField id="claimed_cmc" label="Claimed CMC" type="number" value={formData.claimed_cmc} onChange={(v) => updateField("claimed_cmc", v)} error={errors.claimed_cmc} />
+          </div>
 
-      {/* Master instrument fields */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: TOKEN.gap }}>
-        <FloatingLabelField id="name" label="Master Instrument Name / Tag *" value={formData.name} onChange={(v) => updateField("name", v)} error={errors.name} />
-        <FloatingLabelField id="make" label="Make" value={formData.make} onChange={(v) => updateField("make", v)} error={errors.make} />
-        <FloatingLabelField id="model" label="Model" value={formData.model} onChange={(v) => updateField("model", v)} error={errors.model} />
-        <FloatingLabelField id="serial_number" label="Serial No." value={formData.serial_number} onChange={(v) => updateField("serial_number", v)} error={errors.serial_number} />
-        <FloatingLabelField id="asset_number" label="Asset No." value={formData.asset_number} onChange={(v) => updateField("asset_number", v)} error={errors.asset_number} />
-        <FloatingLabelField id="instrument_type" label="Instrument Type" value={formData.instrument_type} onChange={(v) => updateField("instrument_type", v)} error={errors.instrument_type} />
-        <div style={{ gridColumn: "1 / -1" }}>
-          <FloatingLabelField id="traceability_chain" label="Traceability / Agency Reference Chain" value={formData.traceability_chain} onChange={(v) => updateField("traceability_chain", v)} error={errors.traceability_chain} />
-        </div>
-        <FloatingLabelField id="uncertainty_u" label="Uncertainty (u)" type="number" value={formData.uncertainty_u} onChange={(v) => updateField("uncertainty_u", v)} error={errors.uncertainty_u} />
-        <FloatingLabelField id="accuracy" label="Accuracy" type="number" value={formData.accuracy} onChange={(v) => updateField("accuracy", v)} error={errors.accuracy} />
-        <FloatingLabelField id="resolution" label="Resolution" type="number" value={formData.resolution} onChange={(v) => updateField("resolution", v)} error={errors.resolution} />
-        <FloatingLabelField id="cal_due_date" label="Cal Due Date" type="date" value={formData.cal_due_date} onChange={(v) => updateField("cal_due_date", v)} error={errors.cal_due_date} />
-        <FloatingLabelField id="claimed_cmc" label="Claimed CMC" type="number" value={formData.claimed_cmc} onChange={(v) => updateField("claimed_cmc", v)} error={errors.claimed_cmc} />
+          <div style={{ marginTop: 24, paddingTop: 16, borderTop: `1px solid ${TOKEN.colorBorder}` }}>
+            <button type="button" onClick={() => window.history.back()} style={{ background: "none", border: "none", color: TOKEN.colorMuted, fontSize: TOKEN.fontSize, cursor: "pointer", padding: 0, fontFamily: TOKEN.fontFamily }}>
+              ← Back
+            </button>
+          </div>
+        </section>
       </div>
-
-      {/* Back button */}
-      <div style={{ marginTop: 24, paddingTop: 16, borderTop: `1px solid ${TOKEN.colorBorder}` }}>
-        <button
-          type="button"
-          onClick={() => window.history.back()}
-          style={{
-            background: "none", border: "none", color: TOKEN.colorMuted,
-            fontSize: TOKEN.fontSize, cursor: "pointer", padding: 0,
-            fontFamily: TOKEN.fontFamily,
-          }}
-        >
-          ← Back
-        </button>
-      </div>
-    </section>
+    </div>
   )
 }
 
@@ -279,39 +217,16 @@ function FloatingLabelField({ id, label, value, onChange, type = "text", error =
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
       <div style={{ position: "relative" }}>
-        <input
-          id={id} type={type} value={value} placeholder=" "
-          onChange={(e) => onChange(e.target.value)}
-          onFocus={onFocus} onBlur={onBlur}
-          aria-describedby={error ? `${id}-error` : undefined}
-          aria-invalid={!!error}
-          {...inputProps}
-          style={{
-            width: "100%", boxSizing: "border-box", padding: "20px 12px 6px",
-            fontSize: TOKEN.fontSize, fontFamily: TOKEN.fontFamily, color: TOKEN.colorText,
-            background: TOKEN.colorSurface, border: `1px solid ${error ? TOKEN.colorError : TOKEN.colorBorder}`,
-            borderRadius: TOKEN.radius, outline: "none", transition: "border-color 0.15s",
-          }}
+        <input id={id} type={type} value={value} placeholder=" " onChange={(e) => onChange(e.target.value)} onFocus={onFocus} onBlur={onBlur} aria-describedby={error ? `${id}-error` : undefined} aria-invalid={!!error} {...inputProps}
+          style={{ width: "100%", boxSizing: "border-box", padding: "20px 12px 6px", fontSize: TOKEN.fontSize, fontFamily: TOKEN.fontFamily, color: TOKEN.colorText, background: TOKEN.colorSurface, border: `1px solid ${error ? TOKEN.colorError : TOKEN.colorBorder}`, borderRadius: TOKEN.radius, outline: "none", transition: "border-color 0.15s" }}
           onFocusCapture={(e) => { e.currentTarget.style.borderColor = error ? TOKEN.colorError : TOKEN.colorBorderFocus }}
           onBlurCapture={(e) => { e.currentTarget.style.borderColor = error ? TOKEN.colorError : TOKEN.colorBorder }}
         />
-        <label
-          htmlFor={id}
-          style={{
-            position: "absolute", left: "12px",
-            top: isDateField ? "4px" : undefined,
-            fontSize: isDateField ? TOKEN.fontSizeLabel : undefined,
-            color: TOKEN.colorMuted, pointerEvents: "none", transition: "all 0.15s",
-          }}
-        >
+        <label htmlFor={id} style={{ position: "absolute", left: "12px", top: isDateField ? "4px" : undefined, fontSize: isDateField ? TOKEN.fontSizeLabel : undefined, color: TOKEN.colorMuted, pointerEvents: "none", transition: "all 0.15s" }}>
           {label}
         </label>
       </div>
-      {error && (
-        <span id={`${id}-error`} role="alert" style={{ fontSize: TOKEN.fontSizeLabel, color: TOKEN.colorError, paddingLeft: "2px" }}>
-          {error}
-        </span>
-      )}
+      {error && <span id={`${id}-error`} role="alert" style={{ fontSize: TOKEN.fontSizeLabel, color: TOKEN.colorError, paddingLeft: "2px" }}>{error}</span>}
       <style>{`
         #${id}:not(:placeholder-shown) + label, #${id}:focus + label { top: 4px; font-size: ${TOKEN.fontSizeLabel}; }
         #${id}:placeholder-shown + label { top: 50%; transform: translateY(-50%); font-size: ${TOKEN.fontSize}; }
@@ -343,20 +258,9 @@ function UploadIcon() {
 }
 
 function primaryButtonStyle(disabled) {
-  return {
-    padding: "10px 18px", fontSize: TOKEN.fontSize, fontFamily: TOKEN.fontFamily, fontWeight: 500,
-    color: "#ffffff", background: disabled ? TOKEN.colorBorder : TOKEN.colorPrimary,
-    border: "none", borderRadius: TOKEN.radius, cursor: disabled ? "not-allowed" : "pointer",
-    whiteSpace: "nowrap", alignSelf: "flex-start", marginTop: "2px",
-  }
+  return { padding: "10px 18px", fontSize: TOKEN.fontSize, fontFamily: TOKEN.fontFamily, fontWeight: 500, color: "#ffffff", background: disabled ? TOKEN.colorBorder : TOKEN.colorPrimary, border: "none", borderRadius: TOKEN.radius, cursor: disabled ? "not-allowed" : "pointer", whiteSpace: "nowrap", alignSelf: "flex-start", marginTop: "2px" }
 }
 
 function outlineButtonStyle(accentColor, disabled) {
-  return {
-    display: "inline-flex", alignItems: "center", padding: "8px 14px",
-    fontSize: TOKEN.fontSize, fontFamily: TOKEN.fontFamily, fontWeight: 500,
-    color: disabled ? TOKEN.colorBorder : accentColor, background: "transparent",
-    border: `1px solid ${disabled ? TOKEN.colorBorder : accentColor}`,
-    borderRadius: TOKEN.radius, cursor: disabled ? "not-allowed" : "pointer", whiteSpace: "nowrap",
-  }
+  return { display: "inline-flex", alignItems: "center", padding: "8px 14px", fontSize: TOKEN.fontSize, fontFamily: TOKEN.fontFamily, fontWeight: 500, color: disabled ? TOKEN.colorBorder : accentColor, background: "transparent", border: `1px solid ${disabled ? TOKEN.colorBorder : accentColor}`, borderRadius: TOKEN.radius, cursor: disabled ? "not-allowed" : "pointer", whiteSpace: "nowrap" }
 }
