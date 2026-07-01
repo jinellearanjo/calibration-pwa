@@ -1,3 +1,4 @@
+import { getResults } from "../api";
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
@@ -17,17 +18,16 @@ function ResultsView() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    fetch(`http://127.0.0.1:8000/api/sessions/${sessionId}/validate`)
-      .then(r => r.json())
-      .then(data => {
-        setResult(data);
-        setLoading(false);
-      })
-      .catch(() => {
-        setError("Failed to load validation results.");
-        setLoading(false);
-      });
-  }, [sessionId]);
+      getResults(sessionId)
+        .then(data => {
+          setResult(data);
+          setLoading(false);
+        })
+        .catch(err => {
+          setError(err.message);
+          setLoading(false);
+        });
+    }, [sessionId]);
 
   if (loading) return <Spinner message="Loading results..." />;
 
