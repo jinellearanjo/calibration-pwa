@@ -10,10 +10,13 @@ function Splash() {
   const navigate = useNavigate();
   const [visible, setVisible] = useState(false);
 
-  // Fade in on mount for a polished entrance.
-  useEffect(() => {
-    setTimeout(() => setVisible(true), 100);
-  }, []);
+    useEffect(() => {
+      // Fade in on mount.
+      setTimeout(() => setVisible(true), 100);
+      // Auto-redirect to login after 4 seconds.
+      const timer = setTimeout(() => navigate("/login"), 4000);
+      return () => clearTimeout(timer);
+    }, []);
 
   return (
     <div
