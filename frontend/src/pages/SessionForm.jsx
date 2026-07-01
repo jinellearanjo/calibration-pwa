@@ -1,17 +1,19 @@
-import { useUnsavedWarning } from "../hooks/useUnsavedWarning";
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
+import { useUnsavedWarning } from "../hooks/useUnsavedWarning";
+import { createSession } from "../api";
 
 /**
  * SessionForm component.
  * Allows the user to create a new calibration session by entering
  * the date, technician name, and environmental conditions.
- *
- * @param {Object} props
- * @param {Function} props.onSubmit - Called with form data on valid submission.
+ * Submits data to the backend via createSession from api.js.
  */
-function SessionForm({ onSubmit }) {
+function SessionForm() {
+  const navigate = useNavigate();
   const { setIsDirty, safeNavigate } = useUnsavedWarning();
+
   const [formData, setFormData] = useState({
     instrument_id: "",
     date: "",
@@ -21,6 +23,7 @@ function SessionForm({ onSubmit }) {
     notes: "",
   });
   const [errors, setErrors] = useState({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const requiredFields = ["instrument_id", "date", "technician", "temperature_c", "humidity_pct"];
 
@@ -41,21 +44,30 @@ function SessionForm({ onSubmit }) {
   }
 
   function updateField(field, value) {
-  setFormData(prev => ({ ...prev, [field]: value }));
-  setErrors(prev => ({ ...prev, [field]: validate(field, value) }));
-  // Mark form as dirty when any field changes.
-  setIsDirty(true);
+    setFormData(prev => ({ ...prev, [field]: value }));
+    setErrors(prev => ({ ...prev, [field]: validate(field, value) }));
+    setIsDirty(true);
   }
 
   const hasErrors = Object.values(errors).some(Boolean);
   const allFilled = requiredFields.every(f => formData[f] !== "");
 
-  function handleSubmit() {
+  async function handleSubmit() {
     const freshErrors = {};
     requiredFields.forEach(f => { freshErrors[f] = validate(f, formData[f]); });
     setErrors(freshErrors);
     if (Object.values(freshErrors).some(Boolean)) return;
-    onSubmit(formData);
+
+    setIsSubmitting(true);
+    try {
+      await createSession(formData);
+      setIsDirty(false);
+      navigate("/dashboard");
+    } catch (err) {
+      setErrors(prev => ({ ...prev, submit: err.message }));
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -63,7 +75,6 @@ function SessionForm({ onSubmit }) {
       <Navbar />
       <div style={{ maxWidth: 600, margin: "0 auto", padding: "48px 32px" }}>
 
-        {/* Page header */}
         <div style={{ marginBottom: 32 }}>
           <p style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--color-accent)", marginBottom: 8 }}>
             Step 03
@@ -76,7 +87,6 @@ function SessionForm({ onSubmit }) {
           </p>
         </div>
 
-        {/* Form card */}
         <div style={{
           background: "var(--color-surface)",
           border: "1px solid var(--color-border)",
@@ -91,23 +101,29 @@ function SessionForm({ onSubmit }) {
           <Field label="Humidity (%)" id="humidity_pct" type="number" value={formData.humidity_pct} onChange={v => updateField("humidity_pct", v)} error={errors.humidity_pct} />
           <Field label="Notes (optional)" id="notes" value={formData.notes} onChange={v => updateField("notes", v)} error={errors.notes} />
 
+          {errors.submit && (
+            <p style={{ color: "var(--color-error)", fontSize: 13, marginBottom: 8 }}>
+              {errors.submit}
+            </p>
+          )}
+
           <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
             <button
               onClick={handleSubmit}
-              disabled={hasErrors || !allFilled}
+              disabled={hasErrors || !allFilled || isSubmitting}
               style={{
                 flex: 1,
                 padding: "11px",
-                background: hasErrors || !allFilled ? "var(--color-border)" : "var(--color-primary)",
+                background: hasErrors || !allFilled || isSubmitting ? "var(--color-border)" : "var(--color-primary)",
                 color: "white",
                 border: "none",
                 borderRadius: "var(--radius)",
                 fontWeight: 600,
                 fontSize: 14,
-                cursor: hasErrors || !allFilled ? "not-allowed" : "pointer",
+                cursor: hasErrors || !allFilled || isSubmitting ? "not-allowed" : "pointer",
               }}
             >
-              Create Session
+              {isSubmitting ? "Creating..." : "Create Session"}
             </button>
             <button
               onClick={() => safeNavigate("/dashboard")}
@@ -131,10 +147,6 @@ function SessionForm({ onSubmit }) {
   );
 }
 
-/**
- * Field component.
- * Labelled input with inline error display.
- */
 function Field({ label, id, value, onChange, error, type = "text" }) {
   return (
     <div style={{ marginBottom: 20 }}>

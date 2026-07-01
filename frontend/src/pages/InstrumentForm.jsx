@@ -1,18 +1,20 @@
 import { useState } from "react";
-import { useUnsavedWarning } from "../hooks/useUnsavedWarning";
+import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
+import { useUnsavedWarning } from "../hooks/useUnsavedWarning";
+import { createInstrument, createCalibrationReference } from "../api";
 
 /**
  * InstrumentForm component.
  * Two-section form for registering a new instrument under calibration.
  * Section 1: Calibration Reference Details.
  * Section 2: Unit Under Calibration (UUC) fields.
- *
- * @param {Object} props
- * @param {Function} props.onSubmit - Called with combined form data on valid submission.
+ * Submits data to the backend via api.js functions.
  */
-function InstrumentForm({ onSubmit }) {
+function InstrumentForm() {
+  const navigate = useNavigate();
   const { setIsDirty, safeNavigate } = useUnsavedWarning();
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [refData, setRefData] = useState({
     certificate_number: "",
@@ -51,7 +53,7 @@ function InstrumentForm({ onSubmit }) {
   function validate(field, value) {
     const numericFields = ["accuracy_class", "resolution", "range_min", "range_max"];
     if (requiredRef.includes(field) || requiredUuc.includes(field)) {
-      if (!value || !value.toString().trim()) return `This field is required.`;
+      if (!value || !value.toString().trim()) return "This field is required.";
     }
     if (numericFields.includes(field) && value !== "" && isNaN(Number(value))) {
       return "Must be a number.";
@@ -62,14 +64,12 @@ function InstrumentForm({ onSubmit }) {
   function updateRef(field, value) {
     setRefData(prev => ({ ...prev, [field]: value }));
     setErrors(prev => ({ ...prev, [field]: validate(field, value) }));
-    // Mark form as dirty when any field changes.
     setIsDirty(true);
   }
 
   function updateUuc(field, value) {
     setUucData(prev => ({ ...prev, [field]: value }));
     setErrors(prev => ({ ...prev, [field]: validate(field, value) }));
-    // Mark form as dirty when any field changes.
     setIsDirty(true);
   }
 
@@ -78,13 +78,25 @@ function InstrumentForm({ onSubmit }) {
     (refData[f] || uucData[f] || "").toString().trim() !== ""
   );
 
-  function handleSubmit() {
+  async function handleSubmit() {
     const freshErrors = {};
     requiredRef.forEach(f => { freshErrors[f] = validate(f, refData[f]); });
     requiredUuc.forEach(f => { freshErrors[f] = validate(f, uucData[f]); });
     setErrors(freshErrors);
     if (Object.values(freshErrors).some(Boolean)) return;
-    onSubmit({ ...refData, ...uucData });
+
+    setIsSubmitting(true);
+    try {
+      // First create the instrument, then create the calibration reference linked to a session.
+      await createInstrument(uucData);
+      await createCalibrationReference(refData);
+      setIsDirty(false);
+      navigate("/session");
+    } catch (err) {
+      setErrors(prev => ({ ...prev, submit: err.message }));
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -92,7 +104,6 @@ function InstrumentForm({ onSubmit }) {
       <Navbar />
       <div style={{ maxWidth: 700, margin: "0 auto", padding: "48px 32px" }}>
 
-        {/* Page header */}
         <div style={{ marginBottom: 32 }}>
           <p style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--color-accent)", marginBottom: 8 }}>
             Step 01
@@ -105,15 +116,7 @@ function InstrumentForm({ onSubmit }) {
           </p>
         </div>
 
-        {/* Section 1 */}
-        <div style={{
-          background: "var(--color-surface)",
-          border: "1px solid var(--color-border)",
-          borderRadius: "var(--radius)",
-          padding: "28px 32px",
-          boxShadow: "var(--shadow-sm)",
-          marginBottom: 16,
-        }}>
+        <div style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)", borderRadius: "var(--radius)", padding: "28px 32px", boxShadow: "var(--shadow-sm)", marginBottom: 16 }}>
           <SectionHeading step="01" title="Calibration Reference Details" />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 24px" }}>
             <Field label="Certificate Number" id="certificate_number" value={refData.certificate_number} onChange={v => updateRef("certificate_number", v)} error={errors.certificate_number} />
@@ -128,15 +131,7 @@ function InstrumentForm({ onSubmit }) {
           </div>
         </div>
 
-        {/* Section 2 */}
-        <div style={{
-          background: "var(--color-surface)",
-          border: "1px solid var(--color-border)",
-          borderRadius: "var(--radius)",
-          padding: "28px 32px",
-          boxShadow: "var(--shadow-sm)",
-          marginBottom: 24,
-        }}>
+        <div style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)", borderRadius: "var(--radius)", padding: "28px 32px", boxShadow: "var(--shadow-sm)", marginBottom: 24 }}>
           <SectionHeading step="02" title="Unit Under Calibration (UUC)" />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 24px" }}>
             <Field label="Instrument Name" id="name" value={uucData.name} onChange={v => updateUuc("name", v)} error={errors.name} />
@@ -158,37 +153,29 @@ function InstrumentForm({ onSubmit }) {
           </div>
         </div>
 
-        {/* Actions */}
+        {errors.submit && (
+          <p style={{ color: "var(--color-error)", fontSize: 13, marginBottom: 12 }}>
+            {errors.submit}
+          </p>
+        )}
+
         <div style={{ display: "flex", gap: 12 }}>
           <button
             onClick={handleSubmit}
-            disabled={hasErrors || !allFilled}
+            disabled={hasErrors || !allFilled || isSubmitting}
             style={{
-              flex: 1,
-              padding: "11px",
-              background: hasErrors || !allFilled ? "var(--color-border)" : "var(--color-primary)",
-              color: "white",
-              border: "none",
-              borderRadius: "var(--radius)",
-              fontWeight: 600,
-              fontSize: 14,
-              cursor: hasErrors || !allFilled ? "not-allowed" : "pointer",
+              flex: 1, padding: "11px",
+              background: hasErrors || !allFilled || isSubmitting ? "var(--color-border)" : "var(--color-primary)",
+              color: "white", border: "none", borderRadius: "var(--radius)",
+              fontWeight: 600, fontSize: 14,
+              cursor: hasErrors || !allFilled || isSubmitting ? "not-allowed" : "pointer",
             }}
           >
-            Register Instrument
+            {isSubmitting ? "Registering..." : "Register Instrument"}
           </button>
           <button
             onClick={() => safeNavigate("/dashboard")}
-            style={{
-              padding: "11px 20px",
-              background: "white",
-              color: "var(--color-text)",
-              border: "1px solid var(--color-border)",
-              borderRadius: "var(--radius)",
-              fontSize: 14,
-              fontWeight: 500,
-              cursor: "pointer",
-            }}
+            style={{ padding: "11px 20px", background: "white", color: "var(--color-text)", border: "1px solid var(--color-border)", borderRadius: "var(--radius)", fontSize: 14, fontWeight: 500, cursor: "pointer" }}
           >
             Cancel
           </button>
@@ -198,75 +185,34 @@ function InstrumentForm({ onSubmit }) {
   );
 }
 
-/**
- * SectionHeading component.
- * Styled section heading with step number accent.
- */
 function SectionHeading({ step, title }) {
   return (
     <div style={{ marginBottom: 20, paddingBottom: 12, borderBottom: "1px solid var(--color-border)" }}>
-      <span style={{ fontSize: 11, fontWeight: 700, fontFamily: "var(--font-mono)", color: "var(--color-accent)", marginRight: 10 }}>
-        {step}
-      </span>
-      <span style={{ fontSize: 14, fontWeight: 600, color: "var(--color-primary)" }}>
-        {title}
-      </span>
+      <span style={{ fontSize: 11, fontWeight: 700, fontFamily: "var(--font-mono)", color: "var(--color-accent)", marginRight: 10 }}>{step}</span>
+      <span style={{ fontSize: 14, fontWeight: 600, color: "var(--color-primary)" }}>{title}</span>
     </div>
   );
 }
 
-/**
- * Field component.
- * Labelled input with inline error display.
- */
 function Field({ label, id, value, onChange, error, type = "text" }) {
   return (
     <div style={{ marginBottom: 20 }}>
-      <label htmlFor={id} style={{ display: "block", fontSize: 13, fontWeight: 500, marginBottom: 6, color: "var(--color-text)" }}>
-        {label}
-      </label>
-      <input
-        id={id}
-        type={type}
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        style={{ borderColor: error ? "var(--color-error)" : undefined }}
-      />
-      {error && (
-        <span style={{ color: "var(--color-error)", fontSize: 12, marginTop: 4, display: "block" }}>
-          {error}
-        </span>
-      )}
+      <label htmlFor={id} style={{ display: "block", fontSize: 13, fontWeight: 500, marginBottom: 6, color: "var(--color-text)" }}>{label}</label>
+      <input id={id} type={type} value={value} onChange={e => onChange(e.target.value)} style={{ borderColor: error ? "var(--color-error)" : undefined }} />
+      {error && <span style={{ color: "var(--color-error)", fontSize: 12, marginTop: 4, display: "block" }}>{error}</span>}
     </div>
   );
 }
 
-/**
- * SelectField component.
- * Labelled dropdown with inline error display.
- */
 function SelectField({ label, id, value, onChange, error, options }) {
   return (
     <div style={{ marginBottom: 20 }}>
-      <label htmlFor={id} style={{ display: "block", fontSize: 13, fontWeight: 500, marginBottom: 6, color: "var(--color-text)" }}>
-        {label}
-      </label>
-      <select
-        id={id}
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        style={{ borderColor: error ? "var(--color-error)" : undefined }}
-      >
+      <label htmlFor={id} style={{ display: "block", fontSize: 13, fontWeight: 500, marginBottom: 6, color: "var(--color-text)" }}>{label}</label>
+      <select id={id} value={value} onChange={e => onChange(e.target.value)} style={{ borderColor: error ? "var(--color-error)" : undefined }}>
         <option value="">Select...</option>
-        {options.map(opt => (
-          <option key={opt} value={opt}>{opt}</option>
-        ))}
+        {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
       </select>
-      {error && (
-        <span style={{ color: "var(--color-error)", fontSize: 12, marginTop: 4, display: "block" }}>
-          {error}
-        </span>
-      )}
+      {error && <span style={{ color: "var(--color-error)", fontSize: 12, marginTop: 4, display: "block" }}>{error}</span>}
     </div>
   );
 }
