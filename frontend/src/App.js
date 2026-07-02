@@ -6,6 +6,7 @@ import Dashboard from "./pages/Dashboard";
 import InstrumentForm from "./pages/InstrumentForm";
 import SessionForm from "./pages/SessionForm";
 import ReadingsForm from "./pages/ReadingsForm";
+import WeighingReadingsForm from "./pages/WeighingReadingsForm";
 import MasterForm from "./pages/MasterForm";
 import CalculationView from "./pages/CalculationView";
 import ResultsView from "./pages/ResultsView";
@@ -23,6 +24,7 @@ function App() {
         <Route path="/master" element={<ProtectedRoute><MasterForm /></ProtectedRoute>} />
         <Route path="/session" element={<ProtectedRoute><SessionForm /></ProtectedRoute>} />
         <Route path="/readings" element={<ProtectedRoute><ReadingsForm /></ProtectedRoute>} />
+        <Route path="/readings/weighing" element={<ProtectedRoute><WeighingReadingsForm /></ProtectedRoute>} />
         <Route path="/calculation" element={<ProtectedRoute><CalculationView /></ProtectedRoute>} />
         <Route path="/results/:sessionId" element={<ProtectedRoute><ResultsView /></ProtectedRoute>} />
         <Route path="/report/:sessionId" element={<ProtectedRoute><ReportPage /></ProtectedRoute>} />
