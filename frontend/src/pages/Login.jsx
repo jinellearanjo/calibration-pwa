@@ -27,7 +27,6 @@ function Login() {
       if (error) {
         setMessage(error.message);
       } else {
-        // Redirect to dashboard on successful login.
         navigate("/dashboard");
       }
     }
@@ -51,12 +50,12 @@ function Login() {
         maxWidth: 400,
       }}>
         <div style={{ marginBottom: 32, textAlign: "center" }}>
-          <img src="/logo.png" alt="Instruworks" style={{ height: 36, marginBottom: 16 }} />
+          <img src="/logo.png" alt="Instruworks" style={{ height: 52, marginBottom: 20 }} />
           <h2 style={{ fontSize: 20, fontWeight: 600, color: "var(--color-primary)", marginBottom: 4 }}>
-            {isSignUp ? "Welcome." : " "}
+            {isSignUp ? "Welcome." : "Let's Certify."}
           </h2>
           <p style={{ fontSize: 13, color: "var(--color-muted)", marginBottom: 0 }}>
-            {isSignUp ? "Create your Instruworks account." : "Let's Certify."}
+            {isSignUp ? "Create your Instruworks account." : "Sign in to continue."}
           </p>
         </div>
 
@@ -101,7 +100,7 @@ function Login() {
           onMouseEnter={e => e.currentTarget.style.background = "var(--color-primary-hover)"}
           onMouseLeave={e => e.currentTarget.style.background = "var(--color-primary)"}
         >
-          {isSignUp ? "Create Account" : "Sign In"}
+          {isSignUp ? "Create Account" : "Let's Certify"}
         </button>
 
         {message && (
