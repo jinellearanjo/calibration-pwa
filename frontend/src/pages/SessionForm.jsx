@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import { useUnsavedWarning } from "../hooks/useUnsavedWarning";
-import { createSession } from "../api";
+import { createSession, listMasterInstruments } from "../api";
 
 /**
  * SessionForm component.
@@ -16,6 +16,7 @@ function SessionForm() {
 
   const [formData, setFormData] = useState({
     instrument_id: "",
+    master_instrument_id: "",
     date: "",
     technician: "",
     temperature_c: "",
@@ -24,8 +25,23 @@ function SessionForm() {
   });
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [masterInstruments, setMasterInstruments] = useState([]);
+  const [masterLoadError, setMasterLoadError] = useState("");
 
+  // master_instrument_id is intentionally not in requiredFields: some
+  // historical sessions predate this field, and not every calibration type
+  // may have a master instrument recorded yet. Fill it in when known so
+  // reporting.gather_report_data can populate the certificate's master
+  // instrument section.
   const requiredFields = ["instrument_id", "date", "technician", "temperature_c", "humidity_pct"];
+
+  useEffect(() => {
+    let cancelled = false;
+    listMasterInstruments()
+      .then(data => { if (!cancelled) setMasterInstruments(data || []); })
+      .catch(err => { if (!cancelled) setMasterLoadError(err.message); });
+    return () => { cancelled = true; };
+  }, []);
 
   function validate(field, value) {
     if (field === "instrument_id" && !value.trim()) return "Instrument ID is required.";
@@ -60,7 +76,9 @@ function SessionForm() {
 
     setIsSubmitting(true);
     try {
-      await createSession(formData);
+      const payload = { ...formData };
+      if (!payload.master_instrument_id) delete payload.master_instrument_id;
+      await createSession(payload);
       setIsDirty(false);
       navigate("/dashboard");
     } catch (err) {
@@ -95,6 +113,38 @@ function SessionForm() {
           boxShadow: "var(--shadow-sm)",
         }}>
           <Field label="Instrument ID" id="instrument_id" value={formData.instrument_id} onChange={v => updateField("instrument_id", v)} error={errors.instrument_id} />
+
+          <div style={{ marginBottom: 20 }}>
+            <label htmlFor="master_instrument_id" style={{ display: "block", fontSize: 13, fontWeight: 500, marginBottom: 6, color: "var(--color-text)" }}>
+              Master Instrument (optional)
+            </label>
+            <select
+              id="master_instrument_id"
+              value={formData.master_instrument_id}
+              onChange={e => updateField("master_instrument_id", e.target.value)}
+              style={{
+                width: "100%",
+                padding: "10px",
+                borderRadius: "var(--radius)",
+                border: "1px solid var(--color-border)",
+                fontSize: 14,
+                background: "white",
+              }}
+            >
+              <option value="">— None selected —</option>
+              {masterInstruments.map(m => (
+                <option key={m.id} value={m.id}>
+                  {m.name} ({m.instrument_type}, S/N {m.serial_number})
+                </option>
+              ))}
+            </select>
+            {masterLoadError && (
+              <span style={{ color: "var(--color-error)", fontSize: 12, marginTop: 4, display: "block" }}>
+                Could not load master instruments: {masterLoadError}
+              </span>
+            )}
+          </div>
+
           <Field label="Date" id="date" type="date" value={formData.date} onChange={v => updateField("date", v)} error={errors.date} />
           <Field label="Technician" id="technician" value={formData.technician} onChange={v => updateField("technician", v)} error={errors.technician} />
           <Field label="Temperature (°C)" id="temperature_c" type="number" value={formData.temperature_c} onChange={v => updateField("temperature_c", v)} error={errors.temperature_c} />
