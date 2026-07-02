@@ -51,7 +51,7 @@ function Login() {
       }}>
         <div style={{ marginBottom: 32, textAlign: "center" }}>
           <img src="/logo.png" alt="Instruworks" style={{ height: 84, marginBottom: 16 }} />
-          <h2 style={{ fontSize: 22, fontWeight: 300, color: "var(--color-primary)", letterSpacing: "0.04em", marginBottom: 4 }}>
+          <h2 style={{ fontSize: 22, fontWeight: 350, color: "var(--color-primary)", letterSpacing: "0.04em", marginBottom: 4 }}>
             {isSignUp ? "Join Instruworks." : "Welcome."}
           </h2>
           <p style={{ fontSize: 12, color: "var(--color-muted)" }}>
