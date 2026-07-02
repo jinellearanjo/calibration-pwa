@@ -11,6 +11,10 @@ from models import (
     MasterInstrumentCreate,
     CalibrationReferenceCreate,
     UncertaintyBudgetCreate,
+    WeighingRepeatabilityTestCreate,
+    WeighingRepeatabilityReadingCreate,
+    WeighingOffCenterReadingCreate,
+    WeighingHysteresisReadingCreate,
 )
 import database
 from modules import validation, reporting
@@ -106,6 +110,8 @@ def create_session(
     # Convert date and UUID fields to strings for Supabase.
     data["instrument_id"] = str(data["instrument_id"])
     data["date"] = str(data["date"])
+    if data.get("master_instrument_id") is not None:
+        data["master_instrument_id"] = str(data["master_instrument_id"])
     response = database.supabase.table("calibration_sessions").insert(data).execute()
     return response.data
 
@@ -174,6 +180,9 @@ def create_calibration_reference(
 
 
 # ── Readings ──────────────────────────────────────────────────────────────────
+# Used by Pressure, Temperature, and Electrical sessions. See the Weighing
+# section below for the three test-specific endpoints Weighing sessions use
+# instead.
 
 @app.post("/api/readings")
 def create_reading(
@@ -338,6 +347,173 @@ def get_uncertainty_budget(
     if not record:
         raise HTTPException(status_code=404, detail="Uncertainty budget not found.")
     return record
+
+
+# ── Weighing: Repeatability test ────────────────────────────────────────────
+
+@app.post("/api/sessions/{session_id}/weighing/repeatability")
+def create_weighing_repeatability_test(
+    session_id: UUID,
+    payload: WeighingRepeatabilityTestCreate,
+    readings: list[WeighingRepeatabilityReadingCreate],
+    user_id: str = Depends(get_current_user_id),
+):
+    """Create a weighing repeatability test and its 10 readings together.
+
+    Args:
+        session_id: UUID of the calibration session.
+        payload: Test-level fields (test_point, nominal_load, unit,
+            standard_weights_uncertainty).
+        readings: The 10 individual readings for this test point.
+        user_id: UUID of the authenticated user from JWT.
+
+    Returns:
+        dict: The created test record with its readings nested under
+            "readings".
+
+    Raises:
+        HTTPException: 400 if fewer or more than 10 readings are supplied.
+    """
+    if len(readings) != 10:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Repeatability test requires exactly 10 readings, got {len(readings)}.",
+        )
+
+    test_data = payload.dict()
+    test_data["session_id"] = str(session_id)
+    test_record = database.insert_weighing_repeatability_test(test_data)
+    test_id = test_record[0]["id"]
+
+    reading_rows = []
+    for r in readings:
+        row = r.dict()
+        row["test_id"] = test_id
+        reading_rows.append(row)
+    reading_records = database.insert_weighing_repeatability_readings(reading_rows)
+
+    return {**test_record[0], "readings": reading_records}
+
+
+@app.get("/api/sessions/{session_id}/weighing/repeatability")
+def get_weighing_repeatability_tests(
+    session_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Fetch all repeatability tests (with readings) for a session.
+
+    Args:
+        session_id: UUID of the calibration session.
+        user_id: UUID of the authenticated user from JWT.
+
+    Returns:
+        list: Repeatability test records with nested readings.
+    """
+    return database.get_weighing_repeatability_tests(str(session_id))
+
+
+# ── Weighing: Off-center test ────────────────────────────────────────────────
+
+@app.post("/api/sessions/{session_id}/weighing/off-center")
+def create_weighing_off_center_readings(
+    session_id: UUID,
+    readings: list[WeighingOffCenterReadingCreate],
+    user_id: str = Depends(get_current_user_id),
+):
+    """Create the 5 off-center position readings for a session.
+
+    Args:
+        session_id: UUID of the calibration session.
+        readings: The 5 readings, one per position (center/front/back/left/right).
+        user_id: UUID of the authenticated user from JWT.
+
+    Returns:
+        list: The created off-center reading records.
+
+    Raises:
+        HTTPException: 400 if not exactly 5 readings are supplied.
+    """
+    if len(readings) != 5:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Off-center test requires exactly 5 readings, got {len(readings)}.",
+        )
+
+    rows = []
+    for r in readings:
+        row = r.dict()
+        row["session_id"] = str(session_id)
+        rows.append(row)
+    return database.insert_weighing_off_center_readings(rows)
+
+
+@app.get("/api/sessions/{session_id}/weighing/off-center")
+def get_weighing_off_center_readings(
+    session_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Fetch all off-center readings for a session.
+
+    Args:
+        session_id: UUID of the calibration session.
+        user_id: UUID of the authenticated user from JWT.
+
+    Returns:
+        list: Off-center reading records.
+    """
+    return database.get_weighing_off_center_readings(str(session_id))
+
+
+# ── Weighing: Hysteresis test ────────────────────────────────────────────────
+
+@app.post("/api/sessions/{session_id}/weighing/hysteresis")
+def create_weighing_hysteresis_readings(
+    session_id: UUID,
+    readings: list[WeighingHysteresisReadingCreate],
+    user_id: str = Depends(get_current_user_id),
+):
+    """Create the 5-step hysteresis sequence readings for a session.
+
+    Args:
+        session_id: UUID of the calibration session.
+        readings: The 5 readings in sequence order 1-5.
+        user_id: UUID of the authenticated user from JWT.
+
+    Returns:
+        list: The created hysteresis reading records.
+
+    Raises:
+        HTTPException: 400 if not exactly 5 readings are supplied.
+    """
+    if len(readings) != 5:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Hysteresis test requires exactly 5 readings, got {len(readings)}.",
+        )
+
+    rows = []
+    for r in readings:
+        row = r.dict()
+        row["session_id"] = str(session_id)
+        rows.append(row)
+    return database.insert_weighing_hysteresis_readings(rows)
+
+
+@app.get("/api/sessions/{session_id}/weighing/hysteresis")
+def get_weighing_hysteresis_readings(
+    session_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Fetch all hysteresis sequence readings for a session, in order.
+
+    Args:
+        session_id: UUID of the calibration session.
+        user_id: UUID of the authenticated user from JWT.
+
+    Returns:
+        list: Hysteresis reading records ordered by sequence_order.
+    """
+    return database.get_weighing_hysteresis_readings(str(session_id))
 
 
 # ── Validation ────────────────────────────────────────────────────────────────
