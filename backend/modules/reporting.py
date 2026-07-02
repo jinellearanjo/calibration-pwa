@@ -25,7 +25,7 @@ Rules enforced throughout
 * No calculation logic and no validation logic live in this module.
 """
 
-from _future_ import annotations
+from __future__ import annotations
 
 import logging
 import os
@@ -63,7 +63,7 @@ from database import (
     insert_audit_log,           # audit_log table
 )
 
-logger = logging.getLogger(_name_)
+logger = logging.getLogger(__name__)
 
 # ─── Module-level constants ────────────────────────────────────────────────────
 
@@ -235,10 +235,17 @@ def gather_report_data(session_id: str) -> ReportData:
     if uncertainty_record is None:
         raise RuntimeError(f"No uncertainty_budgets record found for session_id={session_id}.")
 
-    # master_instruments — master_id comes from the uncertainty budget or session
-    # For now we fetch by the session's instrument type via a separate lookup.
-    # P1 will wire the master_id field during integration week.
+    # master_instruments — linked via calibration_sessions.master_instrument_id
+    master_instrument_id = session_record.get("master_instrument_id")
     master_record = {}
+    if master_instrument_id:
+        master_record = get_master_instrument(master_instrument_id) or {}
+    else:
+        logger.warning(
+            "Session %s has no master_instrument_id set; certificate will be "
+            "generated with blank master instrument fields.",
+            session_id,
+        )
 
     return ReportData(
         session_id=session_id,
