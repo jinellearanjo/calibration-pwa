@@ -171,6 +171,80 @@ export async function getResults(sessionId) {
   return request(`/api/sessions/${sessionId}/validate`);
 }
 
+// ── Weighing tests ────────────────────────────────────────────────────────────
+// Weighing sessions use three separate test-specific endpoints instead of the
+// single createReading/getReadings pair used by Pressure/Temperature/Electrical.
+
+/**
+ * Create a weighing repeatability test and its 10 readings together.
+ * @param {string} sessionId - UUID of the session.
+ * @param {Object} test - Test-level fields: test_point, nominal_load, unit,
+ *   standard_weights_uncertainty.
+ * @param {Array} readings - Exactly 10 reading objects: reading_number,
+ *   reading_before, reading_with_load, reading_after.
+ * @returns {Promise<Object>} The created test record with nested readings.
+ */
+export async function createWeighingRepeatabilityTest(sessionId, test, readings) {
+  return request(`/api/sessions/${sessionId}/weighing/repeatability`, {
+    method: "POST",
+    body: JSON.stringify({ ...test, readings }),
+  });
+}
+
+/**
+ * Fetch all repeatability tests (with readings) for a session.
+ * @param {string} sessionId - UUID of the session.
+ * @returns {Promise<Array>} Repeatability test records with nested readings.
+ */
+export async function getWeighingRepeatabilityTests(sessionId) {
+  return request(`/api/sessions/${sessionId}/weighing/repeatability`);
+}
+
+/**
+ * Create the 5 off-center position readings for a session.
+ * @param {string} sessionId - UUID of the session.
+ * @param {Array} readings - Exactly 5 reading objects, one per position
+ *   (center/front/back/left/right).
+ * @returns {Promise<Array>} The created off-center reading records.
+ */
+export async function createWeighingOffCenterReadings(sessionId, readings) {
+  return request(`/api/sessions/${sessionId}/weighing/off-center`, {
+    method: "POST",
+    body: JSON.stringify(readings),
+  });
+}
+
+/**
+ * Fetch all off-center readings for a session.
+ * @param {string} sessionId - UUID of the session.
+ * @returns {Promise<Array>} Off-center reading records.
+ */
+export async function getWeighingOffCenterReadings(sessionId) {
+  return request(`/api/sessions/${sessionId}/weighing/off-center`);
+}
+
+/**
+ * Create the 5-step hysteresis sequence readings for a session.
+ * @param {string} sessionId - UUID of the session.
+ * @param {Array} readings - Exactly 5 reading objects in sequence order 1-5.
+ * @returns {Promise<Array>} The created hysteresis reading records.
+ */
+export async function createWeighingHysteresisReadings(sessionId, readings) {
+  return request(`/api/sessions/${sessionId}/weighing/hysteresis`, {
+    method: "POST",
+    body: JSON.stringify(readings),
+  });
+}
+
+/**
+ * Fetch all hysteresis sequence readings for a session, in order.
+ * @param {string} sessionId - UUID of the session.
+ * @returns {Promise<Array>} Hysteresis reading records ordered by sequence_order.
+ */
+export async function getWeighingHysteresisReadings(sessionId) {
+  return request(`/api/sessions/${sessionId}/weighing/hysteresis`);
+}
+
 // ── Reports ───────────────────────────────────────────────────────────────────
 
 /**
