@@ -1,6 +1,6 @@
 # Calibration Uncertainty Calculator
 
-A Progressive Web App for GUM-compliant calibration uncertainty calculation, validation, and PDF/Excel certificate generation. Built for Instruworks LLC FZ, Dubai. Complies with ISO/IEC 17025:2017.
+A Progressive Web App for calibration uncertainty calculation, validation, and PDF/Excel certificate generation. Built for Instruworks LLC FZ, Dubai. Complies with ISO/IEC 17025:2017.
 
 ## What It Does
 
