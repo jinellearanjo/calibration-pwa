@@ -48,6 +48,10 @@ class CalibrationSessionCreate(BaseModel):
 
     Attributes:
         instrument_id: UUID of the instrument being calibrated.
+        master_instrument_id: UUID of the master instrument used as the
+            calibration standard for this session. Optional because older
+            rows predate this field, but should be set for every new session
+            so reporting.gather_report_data can populate master_record.
         date: Date of the calibration session.
         technician: Name of the technician performing calibration.
         temperature_c: Ambient temperature in degrees Celsius.
@@ -55,6 +59,7 @@ class CalibrationSessionCreate(BaseModel):
         notes: Optional session notes.
     """
     instrument_id: UUID
+    master_instrument_id: Optional[UUID] = None
     date: date
     technician: str
     temperature_c: float
@@ -64,6 +69,10 @@ class CalibrationSessionCreate(BaseModel):
 
 class ReadingCreate(BaseModel):
     """Pydantic model for creating a calibration reading record.
+
+    Used by Pressure, Temperature, and Electrical sessions. Weighing sessions
+    do not use this model — see WeighingRepeatabilityReadingCreate,
+    WeighingOffCenterReadingCreate, and WeighingHysteresisReadingCreate below.
 
     Attributes:
         session_id: UUID of the parent calibration session.
@@ -153,6 +162,10 @@ class UncertaintyBudgetCreate(BaseModel):
         u_head: Medium head correction uncertainty.
         u_zero: Zero offset uncertainty.
         u_temp: Temperature influence uncertainty.
+        u_std_weights: Standard weights' contributed uncertainty. Weighing
+            sessions only; leave unset for Pressure/Temperature/Electrical.
+        u_eccentric: Eccentric/off-center loading uncertainty. Weighing
+            sessions only; leave unset for Pressure/Temperature/Electrical.
         cmc: Claimed measurement capability.
         combined_uncertainty: Root sum of squares of all components.
         expanded_uncertainty: Combined uncertainty multiplied by coverage factor.
@@ -161,14 +174,129 @@ class UncertaintyBudgetCreate(BaseModel):
     """
     session_id: UUID
     type_a_value: float
-    u_std: float
-    u_res: float
-    u_hys: float
+    u_std: Optional[float] = None
+    u_res: Optional[float] = None
+    u_hys: Optional[float] = None
     u_head: Optional[float] = None
-    u_zero: float
-    u_temp: float
+    u_zero: Optional[float] = None
+    u_temp: Optional[float] = None
+    u_std_weights: Optional[float] = None
+    u_eccentric: Optional[float] = None
     cmc: float
     combined_uncertainty: float
     expanded_uncertainty: float
     k_value: float
     final_applied_uncertainty: float
+
+
+# ── Weighing test models ────────────────────────────────────────────────────
+# Weighing sessions capture raw test data across three separate procedures
+# (repeatability, off-center, hysteresis) rather than the single
+# ascending/descending-per-point pattern used by Pressure/Temperature/Electrical.
+# See ReadingCreate above for the pattern used by the other three categories.
+
+class WeighingRepeatabilityTestCreate(BaseModel):
+    """Pydantic model for creating a weighing repeatability test record.
+
+    One record per test_point (near_zero, fifty_percent, hundred_percent).
+    Each test_point has 10 associated readings — see
+    WeighingRepeatabilityReadingCreate.
+
+    Attributes:
+        session_id: UUID of the parent calibration session.
+        test_point: Which of the three fixed load points this test covers.
+        nominal_load: The nominal load applied at this test point.
+        unit: Unit of measurement (e.g. kg, g).
+        standard_weights_uncertainty: Combined uncertainty of the standard
+            weight combination used at this point, taken from the
+            standard weights' own calibration certificates.
+    """
+    session_id: UUID
+    test_point: str  # 'near_zero' | 'fifty_percent' | 'hundred_percent'
+    nominal_load: float
+    unit: str
+    standard_weights_uncertainty: Optional[float] = None
+
+
+class WeighingRepeatabilityReadingCreate(BaseModel):
+    """Pydantic model for creating a single repeatability reading.
+
+    Attributes:
+        test_id: UUID of the parent WeighingRepeatabilityTest.
+        reading_number: Which of the 10 readings this is (1-10).
+        reading_before: Zero/tare reading before load is applied.
+        reading_with_load: Reading with the nominal load applied.
+        reading_after: Zero/tare reading after load is removed.
+    """
+    test_id: UUID
+    reading_number: int
+    reading_before: float
+    reading_with_load: float
+    reading_after: float
+
+
+class WeighingOffCenterReadingCreate(BaseModel):
+    """Pydantic model for creating a single off-center (eccentricity) reading.
+
+    Five fixed positions are tested at a chosen load, typically 50% of range.
+
+    Attributes:
+        session_id: UUID of the parent calibration session.
+        position: Which of the five fixed positions this reading is for.
+        nominal_load: The nominal load applied for this test.
+        unit: Unit of measurement.
+        reading_before: Zero/tare reading before load is applied.
+        reading_with_load: Reading with the nominal load applied at this position.
+        reading_after: Zero/tare reading after load is removed.
+    """
+    session_id: UUID
+    position: str  # 'center' | 'front' | 'back' | 'left' | 'right'
+    nominal_load: float
+    unit: str
+    reading_before: float
+    reading_with_load: float
+    reading_after: float
+
+
+class WeighingHysteresisReadingCreate(BaseModel):
+    """Pydantic model for creating a single hysteresis sequence reading.
+
+    Five-step fixed sequence: zero_before -> half_load_ascending -> full_load
+    -> half_load_descending -> zero_after.
+
+    Attributes:
+        session_id: UUID of the parent calibration session.
+        sequence_order: Position in the 5-step sequence (1-5).
+        phase: Which phase of the sequence this reading represents.
+        reading_value: The recorded reading at this phase.
+        unit: Unit of measurement.
+    """
+    session_id: UUID
+    sequence_order: int
+    phase: str  # 'zero_before' | 'half_load_ascending' | 'full_load' | 'half_load_descending' | 'zero_after'
+    reading_value: float
+    unit: str
+
+
+class CMCBandCreate(BaseModel):
+    """Pydantic model for creating a CMC-by-load-band lookup record.
+
+    Shared reference data (not per-user) used to determine the claimed
+    measurement capability applicable to a given load value.
+
+    Attributes:
+        instrument_type: Category this band applies to (e.g. 'Weighing').
+        min_value: Lower bound of the load range this band covers.
+        max_value: Upper bound of the load range this band covers.
+        unit: Unit for min_value/max_value.
+        cmc_value: The CMC value for this load band.
+        cmc_unit: Unit for cmc_value.
+        standard_ref: Optional reference to the accreditation scope document.
+    """
+    instrument_type: str
+    min_value: float
+    max_value: float
+    unit: str
+    cmc_value: float
+    cmc_unit: str
+    standard_ref: Optional[str] = None
