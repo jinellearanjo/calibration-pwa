@@ -23,6 +23,9 @@ from database import (
     get_instrument,
     get_session,
     update_session_status,
+    get_weighing_repeatability_tests,
+    get_weighing_off_center_readings,
+    get_weighing_hysteresis_readings,
 )
 
 
@@ -121,34 +124,74 @@ def validate_session(session_id: str) -> dict:
 
     acceptance_limit = acceptance_limit_record.get("limit_value")
 
-    # Fetch readings to check completeness and hysteresis.
-    readings = get_readings(session_id)
-    if not readings:
-        flags.append("No readings found for this session.")
-        update_session_status(session_id, "REJECTED")
-        return {
-            "status": "REJECTED",
-            "final_applied_uncertainty": final_applied_uncertainty,
-            "acceptance_limit": acceptance_limit,
-            "cmc": cmc,
-            "flags": flags,
-        }
+    if instrument_type == "Weighing":
+        # Weighing sessions store raw data across three separate tables
+        # rather than the single readings table used by Pressure/Temperature/
+        # Electrical. Completeness is checked against each of the three.
+        repeatability_tests = get_weighing_repeatability_tests(session_id) or []
+        off_center_readings = get_weighing_off_center_readings(session_id) or []
+        hysteresis_readings = get_weighing_hysteresis_readings(session_id) or []
 
-    # Check that every reading has both ascending and descending values.
-    for reading in readings:
-        if reading.get("measured_value_up") is None or reading.get("measured_value_down") is None:
+        expected_test_points = {"near_zero", "fifty_percent", "hundred_percent"}
+        found_test_points = {t.get("test_point") for t in repeatability_tests}
+        missing_test_points = expected_test_points - found_test_points
+        if missing_test_points:
             flags.append(
-                f"Point {reading.get('point_number')} is missing ascending or descending measurement."
+                f"Repeatability test missing for load point(s): {', '.join(sorted(missing_test_points))}."
+            )
+        for test in repeatability_tests:
+            reading_count = len(test.get("weighing_repeatability_readings", []) or [])
+            if reading_count != 10:
+                flags.append(
+                    f"Repeatability test '{test.get('test_point')}' has {reading_count} "
+                    f"of 10 required readings."
+                )
+
+        expected_positions = {"center", "front", "back", "left", "right"}
+        found_positions = {r.get("position") for r in off_center_readings}
+        missing_positions = expected_positions - found_positions
+        if missing_positions:
+            flags.append(
+                f"Off-center test missing position(s): {', '.join(sorted(missing_positions))}."
             )
 
-    # Check hysteresis against acceptance limit for each reading.
-    for reading in readings:
-        hysteresis = reading.get("hysteresis")
-        if hysteresis is not None and hysteresis > acceptance_limit:
+        if len(hysteresis_readings) != 5:
             flags.append(
-                f"Point {reading.get('point_number')} hysteresis ({hysteresis}) "
-                f"exceeds acceptance limit ({acceptance_limit})."
+                f"Hysteresis test has {len(hysteresis_readings)} of 5 required readings."
             )
+
+        if not repeatability_tests and not off_center_readings and not hysteresis_readings:
+            flags.append("No weighing test data found for this session.")
+
+    else:
+        # Fetch readings to check completeness and hysteresis.
+        readings = get_readings(session_id)
+        if not readings:
+            flags.append("No readings found for this session.")
+            update_session_status(session_id, "REJECTED")
+            return {
+                "status": "REJECTED",
+                "final_applied_uncertainty": final_applied_uncertainty,
+                "acceptance_limit": acceptance_limit,
+                "cmc": cmc,
+                "flags": flags,
+            }
+
+        # Check that every reading has both ascending and descending values.
+        for reading in readings:
+            if reading.get("measured_value_up") is None or reading.get("measured_value_down") is None:
+                flags.append(
+                    f"Point {reading.get('point_number')} is missing ascending or descending measurement."
+                )
+
+        # Check hysteresis against acceptance limit for each reading.
+        for reading in readings:
+            hysteresis = reading.get("hysteresis")
+            if hysteresis is not None and hysteresis > acceptance_limit:
+                flags.append(
+                    f"Point {reading.get('point_number')} hysteresis ({hysteresis}) "
+                    f"exceeds acceptance limit ({acceptance_limit})."
+                )
 
     # Determine final status based on uncertainty comparison and flags.
     if flags:
