@@ -14,9 +14,9 @@ function Dashboard() {
     { number: "02", label: "Master Instrument", description: "Search, select, or register the reference standard used.", path: "/master" },
     { number: "03", label: "Calibration Session", description: "Set the session date, technician, and environmental conditions.", path: "/session" },
     { number: "04", label: "Enter Readings", description: "Record ascending and descending measurements for each calibration point.", path: "/readings" },
-    { number: "05", label: "Calculate Uncertainty", description: "Run the GUM-compliant uncertainty calculation for this session.", path: "/calculation" },
+    { number: "05", label: "Calculate Uncertainty", description: "Run the uncertainty calculation for this session.", path: "/calculation" },
     { number: "06", label: "Validation Results", description: "Review the compliance status and uncertainty budget.", path: "/results" },
-    { number: "07", label: "Generate Report", description: "Download the calibration certificate as PDF or Excel.", path: "/report" },
+    { number: "07", label: "Generate Report", description: "Generate the calibration certificate as PDF or Excel.", path: "/report" },
   ];
 
   return (
@@ -33,7 +33,7 @@ function Dashboard() {
             Dashboard
           </h1>
           <p style={{ color: "var(--color-muted)", fontSize: 14 }}>
-            Complete each step in order to produce a GUM-compliant calibration certificate.
+            Complete each step in order to produce a calibration certificate.
           </p>
         </div>
 

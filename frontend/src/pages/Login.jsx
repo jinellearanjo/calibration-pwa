@@ -52,9 +52,12 @@ function Login() {
       }}>
         <div style={{ marginBottom: 32, textAlign: "center" }}>
           <img src="/logo.png" alt="Instruworks" style={{ height: 36, marginBottom: 16 }} />
-          <h2 style={{ fontSize: 20, fontWeight: 600, color: "var(--color-primary)" }}>
-            {isSignUp ? "Create Account" : "Sign In"}
+          <h2 style={{ fontSize: 20, fontWeight: 600, color: "var(--color-primary)", marginBottom: 4 }}>
+            {isSignUp ? "Welcome." : "Let's Validate."}
           </h2>
+          <p style={{ fontSize: 13, color: "var(--color-muted)", marginBottom: 0 }}>
+            {isSignUp ? "Create your Instruworks account." : "Sign in to continue."}
+          </p>
         </div>
 
         <div style={{ marginBottom: 16 }}>

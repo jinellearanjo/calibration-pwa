@@ -16,7 +16,7 @@ function Splash() {
       // Auto-redirect to login after 4 seconds.
       const timer = setTimeout(() => navigate("/login"), 4000);
       return () => clearTimeout(timer);
-    }, []);
+    }, [navigate]);
 
   return (
     <div
@@ -39,7 +39,7 @@ function Splash() {
         src="/logo.png"
         alt="Instruworks"
         style={{
-            height: 84,
+            height: 100,
             marginBottom: 50,
             opacity: visible ? 1 : 0,
             transform: visible ? "translateY(0)" : "translateY(12px)",
