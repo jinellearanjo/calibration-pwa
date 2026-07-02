@@ -43,7 +43,7 @@ function Navbar() {
           <img
             src="/logo.png"
             alt="Instruworks"
-            style={{ height: 32, objectFit: "contain" }}
+            style={{ height: 44, objectFit: "contain" }}
           />
         </div>
 
