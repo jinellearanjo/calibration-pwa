@@ -197,7 +197,7 @@ function WeighingReadingsForm() {
       await createWeighingHysteresisReadings(sessionId, payload);
       setSectionStatus(prev => ({ ...prev, hysteresis: "saved" }));
       setIsDirty(false);
-      navigate("/calculation", { state: { sessionId } });
+      navigate(`/calculation/${sessionId}`);
     } catch (err) {
       setSubmitError(err.message);
     } finally {
