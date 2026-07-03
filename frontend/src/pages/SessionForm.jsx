@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import { useUnsavedWarning } from "../hooks/useUnsavedWarning";
-import { createSession, listMasterInstruments } from "../api";
+import { createSession, listMasterInstruments, getInstrument } from "../api";
 
 /**
  * SessionForm component.
@@ -12,10 +12,19 @@ import { createSession, listMasterInstruments } from "../api";
  */
 function SessionForm() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { setIsDirty, safeNavigate } = useUnsavedWarning();
 
+  // instrumentId/instrumentType arrive via navigation state from
+  // InstrumentForm.jsx. Both are optional — the form still works if
+  // someone navigates here directly (e.g. a page refresh), it just won't
+  // be pre-filled and the type will be looked up via getInstrument after
+  // submission instead.
+  const passedInstrumentId = location.state?.instrumentId;
+  const passedInstrumentType = location.state?.instrumentType;
+
   const [formData, setFormData] = useState({
-    instrument_id: "",
+    instrument_id: passedInstrumentId || "",
     master_instrument_id: "",
     date: "",
     technician: "",
@@ -78,9 +87,25 @@ function SessionForm() {
     try {
       const payload = { ...formData };
       if (!payload.master_instrument_id) delete payload.master_instrument_id;
-      await createSession(payload);
+      const created = await createSession(payload);
+      const newSessionId = created?.[0]?.id;
       setIsDirty(false);
-      navigate("/dashboard");
+
+      // Resolve the instrument's type to decide which readings form to
+      // send the user to. Prefer the type passed from InstrumentForm
+      // (avoids an extra request); fall back to a lookup if this form was
+      // opened directly (e.g. a page refresh lost the navigation state).
+      let instrumentType = passedInstrumentType;
+      if (!instrumentType) {
+        const instrument = await getInstrument(payload.instrument_id);
+        instrumentType = instrument?.type;
+      }
+
+      if (instrumentType === "Weighing") {
+        navigate(`/readings/weighing/${newSessionId}`);
+      } else {
+        navigate(`/readings/${newSessionId}`);
+      }
     } catch (err) {
       setErrors(prev => ({ ...prev, submit: err.message }));
     } finally {
