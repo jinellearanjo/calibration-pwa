@@ -17,7 +17,7 @@ from models import (
     WeighingHysteresisReadingCreate,
 )
 import database
-from modules import validation, reporting
+from modules import validation, reporting, formula_manager
 
 app = FastAPI(title="Calibration Uncertainty Calculator API")
 
@@ -347,6 +347,42 @@ def get_uncertainty_budget(
     if not record:
         raise HTTPException(status_code=404, detail="Uncertainty budget not found.")
     return record
+
+
+@app.post("/api/sessions/{session_id}/calculate")
+def calculate_uncertainty_budget(
+    session_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Calculate and store the uncertainty budget for a session.
+
+    Dispatches to the correct calculation logic based on the session's
+    instrument type (see formula_manager.build_uncertainty_budget).
+    Currently implemented for Pressure and Weighing; Temperature and
+    Electrical are not yet available pending the supervisor's Excel files.
+
+    Args:
+        session_id: UUID of the calibration session to calculate for.
+        user_id: UUID of the authenticated user from JWT.
+
+    Returns:
+        dict: The calculated and stored uncertainty budget record.
+
+    Raises:
+        HTTPException: 400 if the session, instrument, or master instrument
+            can't be found, if required data (readings, master instrument
+            numeric fields, weighing test data) is missing or incomplete.
+        HTTPException: 501 if the instrument's category doesn't have a
+            calculation engine implemented yet (Temperature, Electrical).
+    """
+    try:
+        budget_data = formula_manager.build_uncertainty_budget(str(session_id))
+    except NotImplementedError as e:
+        raise HTTPException(status_code=501, detail=str(e))
+    except (ValueError, FileNotFoundError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return database.insert_uncertainty_budget(budget_data)
 
 
 # ── Weighing: Repeatability test ────────────────────────────────────────────
