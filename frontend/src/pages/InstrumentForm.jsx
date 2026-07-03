@@ -88,10 +88,11 @@ function InstrumentForm() {
     setIsSubmitting(true);
     try {
       // First create the instrument, then create the calibration reference linked to a session.
-      await createInstrument(uucData);
+      const created = await createInstrument(uucData);
+      const newInstrumentId = created?.[0]?.id;
       await createCalibrationReference(refData);
       setIsDirty(false);
-      navigate("/session");
+      navigate("/session", { state: { instrumentId: newInstrumentId, instrumentType: uucData.type } });
     } catch (err) {
       setErrors(prev => ({ ...prev, submit: err.message }));
     } finally {
@@ -135,13 +136,13 @@ function InstrumentForm() {
           <SectionHeading step="02" title="Unit Under Calibration (UUC)" />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 24px" }}>
             <Field label="Instrument Name" id="name" value={uucData.name} onChange={v => updateUuc("name", v)} error={errors.name} />
-            <SelectField label="Type" id="type" value={uucData.type} onChange={v => updateUuc("type", v)} error={errors.type} options={["Pressure", "Temperature", "Electrical", "Weighing", "Mass"]} />
+            <SelectField label="Type" id="type" value={uucData.type} onChange={v => updateUuc("type", v)} error={errors.type} options={["Pressure", "Temperature", "Electrical", "Weighing"]} />
             <Field label="Make" id="make" value={uucData.make} onChange={v => updateUuc("make", v)} error={errors.make} />
             <Field label="Model" id="model" value={uucData.model} onChange={v => updateUuc("model", v)} error={errors.model} />
             <Field label="Serial Number" id="serial_number" value={uucData.serial_number} onChange={v => updateUuc("serial_number", v)} error={errors.serial_number} />
             <Field label="Accuracy Class" id="accuracy_class" type="number" value={uucData.accuracy_class} onChange={v => updateUuc("accuracy_class", v)} error={errors.accuracy_class} />
             <Field label="Resolution" id="resolution" type="number" value={uucData.resolution} onChange={v => updateUuc("resolution", v)} error={errors.resolution} />
-            <SelectField label="Unit" id="unit" value={uucData.unit} onChange={v => updateUuc("unit", v)} error={errors.unit} options={["bar", "psi", "kPa", "MPa", "mbar", "kg", "g", "mg", "lb", "N"]} />
+            <SelectField label="Unit" id="unit" value={uucData.unit} onChange={v => updateUuc("unit", v)} error={errors.unit} options={["bar", "psi", "kPa", "MPa", "mbar"]} />
             <Field label="Range Min" id="range_min" type="number" value={uucData.range_min} onChange={v => updateUuc("range_min", v)} error={errors.range_min} />
             <Field label="Range Max" id="range_max" type="number" value={uucData.range_max} onChange={v => updateUuc("range_max", v)} error={errors.range_max} />
             <Field label="Tag Number (optional)" id="tag_number" value={uucData.tag_number} onChange={v => updateUuc("tag_number", v)} error={errors.tag_number} />
