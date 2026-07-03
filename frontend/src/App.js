@@ -23,8 +23,8 @@ function App() {
         <Route path="/instrument" element={<ProtectedRoute><InstrumentForm /></ProtectedRoute>} />
         <Route path="/master" element={<ProtectedRoute><MasterForm /></ProtectedRoute>} />
         <Route path="/session" element={<ProtectedRoute><SessionForm /></ProtectedRoute>} />
-        <Route path="/readings" element={<ProtectedRoute><ReadingsForm /></ProtectedRoute>} />
-        <Route path="/readings/weighing" element={<ProtectedRoute><WeighingReadingsForm /></ProtectedRoute>} />
+        <Route path="/readings/:sessionId" element={<ProtectedRoute><ReadingsForm /></ProtectedRoute>} />
+        <Route path="/readings/weighing/:sessionId" element={<ProtectedRoute><WeighingReadingsForm /></ProtectedRoute>} />
         <Route path="/calculation" element={<ProtectedRoute><CalculationView /></ProtectedRoute>} />
         <Route path="/results/:sessionId" element={<ProtectedRoute><ResultsView /></ProtectedRoute>} />
         <Route path="/report/:sessionId" element={<ProtectedRoute><ReportPage /></ProtectedRoute>} />
