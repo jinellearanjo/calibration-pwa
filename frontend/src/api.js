@@ -160,6 +160,17 @@ export async function getUncertaintyBudget(sessionId) {
   return request(`/api/sessions/${sessionId}/budget`);
 }
 
+/**
+ * Calculate and store the uncertainty budget for a session.
+ * Implemented for Pressure and Weighing; Temperature/Electrical will
+ * return a 501 until their formula files are available.
+ * @param {string} sessionId - UUID of the session.
+ * @returns {Promise<Object>} The calculated uncertainty budget record.
+ */
+export async function calculateUncertainty(sessionId) {
+  return request(`/api/sessions/${sessionId}/calculate`, { method: "POST" });
+}
+
 // ── Validation ────────────────────────────────────────────────────────────────
 
 /**
