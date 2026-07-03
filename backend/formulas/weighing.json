@@ -1,0 +1,58 @@
+{
+  "instrument_type": "Weighing",
+  "coverage_factor": 2.0,
+  "source_file": "DIGITAL_WEIGHING_SCALE_100_KG.xls",
+  "notes": "Extracted from the 'MU' sheet's linearity table formulas. Unlike Pressure/Temperature/Electrical, this is a procedure with intermediate dependent state, not a flat list of independent coefficients — see type_a and type_b_sources below for how each component is actually derived. The eccentric-loading formula in the source file applies a /2*SQRT(3) step immediately followed by /SQRT(3), which mathematically cancels to just /2 — reproduced faithfully below since that's what the lab's real spreadsheet does; flagged to confirm with Charkha whether that's intentional.",
+  "type_a": {
+    "method": "max_of_repeatability_stdevs",
+    "description": "MAX(stdev_near_zero, stdev_fifty_percent, stdev_hundred_percent) / SQRT(10). The single worst of the three repeatability tests, divided by sqrt(n_readings), applied uniformly to every linearity table point rather than computed per-point.",
+    "test_points": ["near_zero", "fifty_percent", "hundred_percent"],
+    "readings_per_point": 10,
+    "divisor": "sqrt(n_readings)"
+  },
+  "type_b_sources": [
+    {
+      "name": "u_std_weights",
+      "description": "Uncertainty of standard (UM) — combined cert uncertainty of the standard weight combination used at this load point",
+      "input_source": "weighing_repeatability_tests.standard_weights_uncertainty",
+      "distribution": "normal",
+      "coverage_factor": 2.0,
+      "formula": "value / 2"
+    },
+    {
+      "name": "u_eccentric",
+      "description": "Eccentric/off-center loading (UL). Source file formula is (max_minus_min/2 * SQRT(3)) / SQRT(3), which cancels to max_minus_min/2 — implemented as the cancelled form.",
+      "input_source": "weighing_off_center_readings, computed as MAX(readings) - MIN(readings)",
+      "distribution": "rectangular",
+      "formula": "(max_reading - min_reading) / 2"
+    },
+    {
+      "name": "u_resolution",
+      "description": "Balance Resolution (UR)",
+      "input_source": "instruments.resolution",
+      "distribution": "rectangular",
+      "formula": "(resolution / 2) / sqrt(3)"
+    }
+  ],
+  "combined_uncertainty": {
+    "method": "root_sum_square",
+    "components": ["type_a", "u_std_weights", "u_eccentric", "u_resolution"]
+  },
+  "expanded_uncertainty": {
+    "method": "combined_uncertainty * coverage_factor",
+    "convert_to_grams": "expanded_uncertainty_kg * 1000"
+  },
+  "cmc_source": "cmc_bands lookup by load value, instrument_type='Weighing'",
+  "final_applied": "max(expanded_uncertainty_g, cmc_lookup(load_g))",
+  "cmc_table_from_source_file": {
+    "note": "This was the worked example in the source file for a specific 100kg scale. Confirm with Charkha whether these are the lab's actual accredited CMC values or specific to that one example instrument before seeding cmc_bands.",
+    "bands": [
+      {"min_g": 0.001, "max_g": 500, "cmc_value": null, "cmc_unit": "mg", "note": "not yet confirmed"},
+      {"min_g": 500, "max_g": 5000, "cmc_value": null, "cmc_unit": "mg", "note": "not yet confirmed"},
+      {"min_g": 5000, "max_g": 10000, "cmc_value": null, "cmc_unit": "mg", "note": "not yet confirmed"},
+      {"min_g": 10000, "max_g": 100000, "cmc_value": null, "cmc_unit": "g", "note": "not yet confirmed"},
+      {"min_g": 100000, "max_g": 1000000, "cmc_value": null, "cmc_unit": "g", "note": "not yet confirmed"},
+      {"min_g": 1000000, "max_g": 10000000, "cmc_value": null, "cmc_unit": "g", "note": "not yet confirmed"}
+    ]
+  }
+}

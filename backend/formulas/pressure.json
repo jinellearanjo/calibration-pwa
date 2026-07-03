@@ -1,0 +1,78 @@
+{
+  "instrument_type": "Pressure",
+  "coverage_factor": 2.0,
+  "source_file": "CA3_CALIBRATION_CERTIFICATE_PRESSURE_FORMAT.xls",
+  "notes": "Extracted from the 'MU' sheet. Ub2 (Standard's Accuracy) and Ub5 (Repeatability) are not part of the original reference-doc plan (which only specified u_std/u_res/u_hys/u_zero/u_temp/u_head) — this file's actual model uses six Type B components, no u_temp or u_head component observed. Confirm with Charkha whether u_temp/u_head are meant to be added for other pressure scopes (e.g. liquid medium) or are genuinely not used.",
+  "type_a": {
+    "method": "stdev_of_mean_error",
+    "description": "Standard deviation of the mean error across repeated readings at each point."
+  },
+  "type_b_sources": [
+    {
+      "name": "u_std",
+      "description": "Standard's Uncertainty (Ub1)",
+      "input_source": "master_instruments.uncertainty_u",
+      "distribution": "normal",
+      "coverage_factor": 2.0
+    },
+    {
+      "name": "u_std_accuracy",
+      "description": "Standard's Accuracy (Ub2)",
+      "input_source": "master_instruments.accuracy",
+      "distribution": "normal",
+      "coverage_factor": 2.0
+    },
+    {
+      "name": "u_res",
+      "description": "Resolution of UUC (Ub3)",
+      "input_source": "instruments.resolution",
+      "distribution": "rectangular",
+      "half_width_formula": "value / 2"
+    },
+    {
+      "name": "u_zero",
+      "description": "Zero error (f0) (Ub4)",
+      "input_source": "readings.mean_error at nominal zero point",
+      "distribution": "rectangular",
+      "half_width_formula": "value"
+    },
+    {
+      "name": "u_repeatability",
+      "description": "Repeatability (Ub5)",
+      "input_source": "readings, computed as stdev of successive differences",
+      "distribution": "normal",
+      "coverage_factor": 1.0
+    },
+    {
+      "name": "u_hys",
+      "description": "Hysteresis (Ub6)",
+      "input_source": "readings.hysteresis, max abs difference between ascending and descending at any point",
+      "distribution": "rectangular",
+      "half_width_formula": "value / 2"
+    }
+  ],
+  "combined_uncertainty": {
+    "method": "root_sum_square",
+    "components": ["type_a", "u_std", "u_std_accuracy", "u_res", "u_zero", "u_repeatability", "u_hys"]
+  },
+  "expanded_uncertainty": {
+    "method": "combined_uncertainty * coverage_factor"
+  },
+  "cmc_source": "master_instruments.claimed_cmc",
+  "final_applied": "max(expanded_uncertainty, cmc)",
+  "acceptance_scope_table": {
+    "note": "Found embedded in the source file (sheet 'MU', column O). This may partially satisfy the 'acceptance limits' requirement for Pressure specifically — confirm with Charkha before seeding acceptance_limits from this rather than waiting on a separate file.",
+    "pneumatic_gauge_bands": [
+      {"min_bar": -1, "max_bar": 0, "limit_bar": 0.02},
+      {"min_bar": 0, "max_bar": 40, "limit_bar": 0.03}
+    ],
+    "hydraulic_gauge_bands": [
+      {"min_bar": 0, "max_bar": 40, "limit_bar": 0.17},
+      {"min_bar": 40, "max_bar": 100, "limit_bar": 0.32},
+      {"min_bar": 100, "max_bar": 400, "limit_bar": 2.06},
+      {"min_bar": 400, "max_bar": 600, "limit_bar": 3.36},
+      {"min_bar": 600, "max_bar": 1600, "limit_bar": 5.50},
+      {"min_bar": 1600, "max_bar": 2500, "limit_bar": 7.65}
+    ]
+  }
+}
