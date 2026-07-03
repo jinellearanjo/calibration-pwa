@@ -110,7 +110,7 @@ function ReadingsForm({
         });
       }
       setIsDirty(false);
-      navigate(`/calculation`);
+      navigate(`/calculation/${sessionId}`);
     } catch (err) {
       setSubmitError(err.message);
     } finally {
