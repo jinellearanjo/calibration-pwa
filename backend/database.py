@@ -360,3 +360,61 @@ def get_cmc_band(instrument_type: str, load_value: float) -> dict:
         if band["min_value"] <= load_value < band["max_value"]:
             return band
     return None
+
+
+# ── Temperature: Repeatability test ──────────────────────────────────────────
+
+def insert_temperature_repeatability_test(test: dict) -> dict:
+    """Insert a temperature repeatability test record (one per setpoint).
+
+    Args:
+        test: A dictionary of temperature_repeatability_tests fields and values.
+
+    Returns:
+        dict: The inserted test record.
+
+    Raises:
+        Exception: If the database query fails.
+    """
+    response = supabase.table("temperature_repeatability_tests").insert(test).execute()
+    return response.data
+
+
+def insert_temperature_repeatability_readings(readings: list) -> list:
+    """Bulk-insert the 3 readings for a temperature repeatability test.
+
+    Args:
+        readings: A list of dictionaries, each matching
+            temperature_repeatability_readings columns. All readings should
+            share the same test_id.
+
+    Returns:
+        list: The inserted reading records.
+
+    Raises:
+        Exception: If the database query fails.
+    """
+    response = supabase.table("temperature_repeatability_readings").insert(readings).execute()
+    return response.data
+
+
+def get_temperature_repeatability_tests(session_id: str) -> list:
+    """Fetch all repeatability test records (and their readings) for a session.
+
+    Args:
+        session_id: The UUID of the calibration session.
+
+    Returns:
+        list: Test records, each with a nested list of its 3 readings via
+            the temperature_repeatability_readings foreign key relationship.
+
+    Raises:
+        Exception: If the database query fails.
+    """
+    response = (
+        supabase.table("temperature_repeatability_tests")
+        .select("*, temperature_repeatability_readings(*)")
+        .eq("session_id", session_id)
+        .execute()
+    )
+    return response.data
