@@ -26,6 +26,7 @@ from database import (
     get_weighing_repeatability_tests,
     get_weighing_off_center_readings,
     get_weighing_hysteresis_readings,
+    get_temperature_repeatability_tests,
 )
 
 
@@ -126,8 +127,8 @@ def validate_session(session_id: str) -> dict:
 
     if instrument_type == "Weighing":
         # Weighing sessions store raw data across three separate tables
-        # rather than the single readings table used by Pressure/Temperature/
-        # Electrical. Completeness is checked against each of the three.
+        # rather than the single readings table used by Pressure/Electrical.
+        # Completeness is checked against each of the three.
         repeatability_tests = get_weighing_repeatability_tests(session_id) or []
         off_center_readings = get_weighing_off_center_readings(session_id) or []
         hysteresis_readings = get_weighing_hysteresis_readings(session_id) or []
@@ -162,6 +163,23 @@ def validate_session(session_id: str) -> dict:
 
         if not repeatability_tests and not off_center_readings and not hysteresis_readings:
             flags.append("No weighing test data found for this session.")
+
+    elif instrument_type == "Temperature":
+        # Temperature sessions store raw data in their own repeatability
+        # table too, same reasoning as Weighing - the readings table's
+        # single ascending/descending-per-point shape doesn't fit
+        # Temperature's 3-repeated-readings-per-setpoint structure.
+        repeatability_tests = get_temperature_repeatability_tests(session_id) or []
+        if not repeatability_tests:
+            flags.append("No temperature repeatability test data found for this session.")
+        else:
+            for test in repeatability_tests:
+                reading_count = len(test.get("temperature_repeatability_readings", []) or [])
+                if reading_count != 3:
+                    flags.append(
+                        f"Repeatability test for setpoint '{test.get('setpoint_label')}' "
+                        f"has {reading_count} of 3 required readings."
+                    )
 
     else:
         # Fetch readings to check completeness and hysteresis.
