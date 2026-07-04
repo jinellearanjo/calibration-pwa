@@ -15,6 +15,8 @@ from models import (
     WeighingRepeatabilityReadingCreate,
     WeighingOffCenterReadingCreate,
     WeighingHysteresisReadingCreate,
+    TemperatureRepeatabilityTestCreate,
+    TemperatureRepeatabilityReadingCreate,
 )
 import database
 from modules import validation, reporting, formula_manager
@@ -550,6 +552,71 @@ def get_weighing_hysteresis_readings(
         list: Hysteresis reading records ordered by sequence_order.
     """
     return database.get_weighing_hysteresis_readings(str(session_id))
+
+
+# ── Temperature: Repeatability test ──────────────────────────────────────────
+
+@app.post("/api/sessions/{session_id}/temperature/repeatability")
+def create_temperature_repeatability_test(
+    session_id: UUID,
+    payload: TemperatureRepeatabilityTestCreate,
+    readings: list[TemperatureRepeatabilityReadingCreate],
+    user_id: str = Depends(get_current_user_id),
+):
+    """Create a temperature repeatability test and its 3 readings together.
+
+    Args:
+        session_id: UUID of the calibration session.
+        payload: Test-level fields (setpoint_label, nominal_temperature,
+            unit, standard_uncertainty, standard_accuracy,
+            drift_standard_uncertainty, hysteresis_value,
+            bath_stability_value, bath_uniformity_value,
+            wire_homogeneity_value).
+        readings: The 3 individual readings for this setpoint.
+        user_id: UUID of the authenticated user from JWT.
+
+    Returns:
+        dict: The created test record with its readings nested under "readings".
+
+    Raises:
+        HTTPException: 400 if fewer or more than 3 readings are supplied.
+    """
+    if len(readings) != 3:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Repeatability test requires exactly 3 readings, got {len(readings)}.",
+        )
+
+    test_data = payload.dict()
+    test_data["session_id"] = str(session_id)
+    test_record = database.insert_temperature_repeatability_test(test_data)
+    test_id = test_record[0]["id"]
+
+    reading_rows = []
+    for r in readings:
+        row = r.dict()
+        row["test_id"] = test_id
+        reading_rows.append(row)
+    reading_records = database.insert_temperature_repeatability_readings(reading_rows)
+
+    return {**test_record[0], "readings": reading_records}
+
+
+@app.get("/api/sessions/{session_id}/temperature/repeatability")
+def get_temperature_repeatability_tests(
+    session_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Fetch all repeatability tests (with readings) for a session.
+
+    Args:
+        session_id: UUID of the calibration session.
+        user_id: UUID of the authenticated user from JWT.
+
+    Returns:
+        list: Repeatability test records with nested readings.
+    """
+    return database.get_temperature_repeatability_tests(str(session_id))
 
 
 # ── Validation ────────────────────────────────────────────────────────────────
