@@ -256,6 +256,34 @@ export async function getWeighingHysteresisReadings(sessionId) {
   return request(`/api/sessions/${sessionId}/weighing/hysteresis`);
 }
 
+// ── Temperature tests ──────────────────────────────────────────────────────
+
+/**
+ * Create a temperature repeatability test and its 3 readings together.
+ * @param {string} sessionId - UUID of the session.
+ * @param {Object} test - Test-level fields: setpoint_label, nominal_temperature,
+ *   unit, standard_uncertainty, standard_accuracy, drift_standard_uncertainty,
+ *   hysteresis_value, bath_stability_value, bath_uniformity_value,
+ *   wire_homogeneity_value (TCK sub-type only).
+ * @param {Array} readings - Exactly 3 reading objects: reading_number, reading_value.
+ * @returns {Promise<Object>} The created test record with nested readings.
+ */
+export async function createTemperatureRepeatabilityTest(sessionId, test, readings) {
+  return request(`/api/sessions/${sessionId}/temperature/repeatability`, {
+    method: "POST",
+    body: JSON.stringify({ ...test, readings }),
+  });
+}
+
+/**
+ * Fetch all repeatability tests (with readings) for a session.
+ * @param {string} sessionId - UUID of the session.
+ * @returns {Promise<Array>} Repeatability test records with nested readings.
+ */
+export async function getTemperatureRepeatabilityTests(sessionId) {
+  return request(`/api/sessions/${sessionId}/temperature/repeatability`);
+}
+
 // ── Reports ───────────────────────────────────────────────────────────────────
 
 /**
