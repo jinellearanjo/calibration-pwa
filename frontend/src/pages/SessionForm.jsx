@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import { useUnsavedWarning } from "../hooks/useUnsavedWarning";
-import { createSession, listMasterInstruments, getInstrument } from "../api";
+import { createSession, createCalibrationReference, listMasterInstruments, getInstrument } from "../api";
 
 /**
  * SessionForm component.
@@ -22,6 +22,7 @@ function SessionForm() {
   // submission instead.
   const passedInstrumentId = location.state?.instrumentId;
   const passedInstrumentType = location.state?.instrumentType;
+  const passedCalibrationReference = location.state?.calibrationReference;
 
   const [formData, setFormData] = useState({
     instrument_id: passedInstrumentId || "",
@@ -89,6 +90,15 @@ function SessionForm() {
       if (!payload.master_instrument_id) delete payload.master_instrument_id;
       const created = await createSession(payload);
       const newSessionId = created?.[0]?.id;
+
+      // Now that a session exists, submit the calibration reference data
+      // (certificate number, customer details) carried forward from
+      // InstrumentForm - this couldn't be submitted earlier since
+      // calibration_reference.session_id didn't exist yet.
+      if (passedCalibrationReference) {
+        await createCalibrationReference({ ...passedCalibrationReference, session_id: newSessionId });
+      }
+
       setIsDirty(false);
 
       // Resolve the instrument's type to decide which readings form to
