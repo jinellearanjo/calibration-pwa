@@ -1,0 +1,100 @@
+{
+  "instrument_type": "Temperature",
+  "coverage_factor": 2.0,
+  "source_files": ["TCK_LF_Fluke_1524.xlsx", "RTD_LF_Fluke_1524.xlsx", "DTI_LF_Fluke_1524.xlsx", "DRY__BLOCK_Fluke_1524.xlsx"],
+  "notes": "Unlike Pressure/Weighing, Temperature has FOUR sub-types requiring instruments.instrument_subtype to dispatch correctly: 'TCK' (thermocouple K-type), 'RTD', 'DTI' (digital indicator), 'DryBlock'. All four share Ua+Ub1-Ub7; TCK alone has an extra Ub8 (wire homogeneity). Verified every divisor against the real files' own computed 'Standard Uncertainty' column - see anomalies_found below for two genuine discrepancies in the source data that were NOT silently reproduced.",
+  "sub_types": ["TCK", "RTD", "DTI", "DryBlock"],
+  "type_a": {
+    "method": "stdev_of_repeated_readings_divided_by_sqrt_n",
+    "description": "3 repeated readings at each setpoint. Standard uncertainty = stdev(readings) / sqrt(3). Verified exact match against all 4 source files (e.g. TCK: 0.002517/sqrt(3) = 0.001453, matches file exactly).",
+    "n_readings": 3
+  },
+  "type_b_sources": [
+    {
+      "name": "u_std",
+      "description": "Uncertainty of Standard (Ub1)",
+      "input_source": "temperature_repeatability_tests.standard_uncertainty",
+      "distribution": "normal",
+      "coverage_factor": 2.0,
+      "verified": "0.17/2 = 0.085, exact match across TCK/RTD/DryBlock (same physical Fluke 1524 standard)"
+    },
+    {
+      "name": "u_std_accuracy",
+      "description": "Accuracy of Standard (Ub2)",
+      "input_source": "temperature_repeatability_tests.standard_accuracy",
+      "distribution": "rectangular",
+      "formula": "value / sqrt(3)",
+      "verified": "0 / sqrt(3) = 0, trivial match"
+    },
+    {
+      "name": "u_drift",
+      "description": "Drift of Standard (Ub3)",
+      "input_source": "temperature_repeatability_tests.drift_standard_uncertainty",
+      "distribution": "rectangular",
+      "formula": "pass-through, NOT derived from a raw value in-app",
+      "verified": "NOT reliable - see anomalies_found. Entered directly as an already-computed standard uncertainty, same pattern as weighing.json's standard_weights_uncertainty."
+    },
+    {
+      "name": "u_res",
+      "description": "Resolution of UUC (Ub4)",
+      "input_source": "instruments.resolution",
+      "distribution": "rectangular",
+      "formula": "(value / 2) / sqrt(3)",
+      "verified": "0.2519/2/sqrt(3) = 0.0727, matches all 4 files exactly, despite the divisor column literally displaying 'sqrt(6)' - the displayed label appears incomplete/mislabeled, actual computed result confirms the (value/2)/sqrt(3) pattern, same as weighing's balance resolution formula"
+    },
+    {
+      "name": "u_hys",
+      "description": "Hysteresis (Ub5)",
+      "input_source": "readings or a dedicated hysteresis test value, sign preserved",
+      "distribution": "rectangular",
+      "formula": "value / sqrt(3)",
+      "verified": "-0.002/sqrt(3) = -0.001155, exact match. Note: no /2 first, unlike Pressure/Weighing's hysteresis formulas - sign is preserved through to standard uncertainty (RSS combination squares it away regardless)"
+    },
+    {
+      "name": "u_bath_stability",
+      "description": "Stability of Temperature Bath (Ub6)",
+      "input_source": "temperature_repeatability_tests.bath_stability_value",
+      "distribution": "rectangular",
+      "formula": "value / sqrt(3)",
+      "verified": "0.0228/sqrt(3) = 0.013164, exact match across all 4 files"
+    },
+    {
+      "name": "u_bath_uniformity",
+      "description": "Uniformity of Bath, Radial & Axial (Ub7)",
+      "input_source": "temperature_repeatability_tests.bath_uniformity_value",
+      "distribution": "rectangular",
+      "formula": "value / sqrt(3)",
+      "verified": "Confirmed correct via RTD/DTI/DryBlock (0.2519/sqrt(3) = 0.145435 or 0.0019/sqrt(3) = 0.001097 for DryBlock, all exact matches). TCK's OWN sheet shows this as 0 - see anomalies_found. Implemented here using the verified value/sqrt(3) formula, not TCK's apparently-buggy displayed 0."
+    },
+    {
+      "name": "u_wire_homogeneity",
+      "description": "Homogeneity of Thermocouple Wire (Ub8) - TCK sub-type only",
+      "input_source": "temperature_repeatability_tests.wire_homogeneity_value",
+      "distribution": "rectangular",
+      "formula": "value / sqrt(3)",
+      "applies_to_subtypes": ["TCK"],
+      "verified": "TCK's own sheet shows 0.145435 next to this row for a value of 0.015 - mathematically impossible for value/sqrt(3) since dividing by a number greater than 1 cannot increase magnitude. See anomalies_found."
+    }
+  ],
+  "combined_uncertainty": {
+    "method": "root_sum_square",
+    "components_all_subtypes": ["type_a", "u_std", "u_std_accuracy", "u_drift", "u_res", "u_hys", "u_bath_stability", "u_bath_uniformity"],
+    "components_tck_additional": ["u_wire_homogeneity"]
+  },
+  "expanded_uncertainty": {
+    "method": "combined_uncertainty * coverage_factor"
+  },
+  "cmc_source": "master_instruments.claimed_cmc",
+  "final_applied": "max(expanded_uncertainty, cmc)",
+  "anomalies_found": {
+    "note": "These were found by verifying every divisor against the source files' own computed 'Standard Uncertainty' column, not assumed. Reported here rather than silently reproduced or silently 'corrected' without confirmation, since this affects real ISO 17025 certificate numbers.",
+    "ub3_drift_value_mismatch": {
+      "description": "TCK, RTD, and DryBlock all display Value=0.017 for Drift of Standard, but their own computed Standard Uncertainty (0.004041) only matches if the real input were 0.007, not 0.017 (0.007/sqrt(3) = 0.0040415, exact match). Likely a single-digit typo in the displayed Value cell. DTI shows a different, less clean mismatch (Value=0.025, implied real input approximately -0.004). CONFIRM WITH SUPERVISOR before trusting either the displayed Value or the computed Standard Uncertainty as the intended figure.",
+      "resolution": "u_drift is implemented as a direct pass-through of an already-known standard uncertainty value (see type_b_sources above), sidestepping the need to re-derive it from the unreliable Value column."
+    },
+    "tck_ub7_ub8_swap": {
+      "description": "TCK's sheet shows Ub7 (bath homogeneity/uniformity, value 0.2519) with a computed Standard Uncertainty of 0, while Ub8 (wire homogeneity, value 0.015) shows 0.145435 - which is what 0.2519/sqrt(3) actually equals, not what 0.015/sqrt(3) equals (0.00866). RTD/DTI/DryBlock's equivalent last-row component computes correctly (0.145435 or 0.001097), confirming the value/sqrt(3) formula itself is right and this is specifically a TCK spreadsheet bug - likely from inserting the wire-homogeneity row without correctly re-linking the row above it.",
+      "resolution": "Both u_bath_uniformity and u_wire_homogeneity are implemented using the verified value/sqrt(3) formula uniformly, not TCK's own displayed (buggy) result for Ub7."
+    }
+  }
+}
