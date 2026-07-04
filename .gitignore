@@ -3,4 +3,4 @@ __pycache__/
 node_modules/
 *.pyc
 .DS_Store
-*.env.local
+*.env.local.idea/ 
