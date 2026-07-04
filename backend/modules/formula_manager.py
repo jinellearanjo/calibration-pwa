@@ -114,12 +114,14 @@ def build_uncertainty_budget(session_id: str) -> dict:
         return _build_pressure_budget(session_id, instrument, master)
     elif instrument_type == "Weighing":
         return _build_weighing_budget(session_id, instrument, master)
-    elif instrument_type in ("Temperature", "Electrical"):
+    elif instrument_type == "Temperature":
+        return _build_temperature_budget(session_id, instrument, master)
+    elif instrument_type == "Electrical":
         raise NotImplementedError(
-            f"Calculation engine for instrument_type='{instrument_type}' is not "
-            f"yet implemented — waiting on the supervisor's Excel formula file "
-            f"for this category. See formulas/{instrument_type.lower()}.json "
-            f"(does not exist yet)."
+            f"Calculation engine for instrument_type='Electrical' is not yet "
+            f"implemented — this category has 11 separate function types "
+            f"(DCV/ACV/DCA/ACA/Resistance/Frequency/etc), each needing its own "
+            f"formula definition. See formulas/electrical.json (does not exist yet)."
         )
     else:
         raise ValueError(f"Unknown instrument_type: '{instrument_type}'.")
@@ -229,6 +231,93 @@ def _build_weighing_budget(session_id: str, instrument: dict, master: dict) -> d
         resolution=instrument["resolution"],
         load_value_g=load_value_g,
         cmc_bands=cmc_bands,
+    )
+    budget["session_id"] = session_id
+    return budget
+
+
+def _build_temperature_budget(session_id: str, instrument: dict, master: dict) -> dict:
+    """Build the uncertainty budget for a Temperature session.
+
+    Requires instruments.instrument_subtype to be one of 'TCK', 'RTD',
+    'DTI', 'DryBlock' — dispatches which components apply (TCK alone needs
+    wire_homogeneity_value). Uses whichever repeatability test was most
+    recently created for this session if multiple setpoints exist; a
+    session covering multiple setpoints would need one budget calculated
+    per setpoint, which the current single-budget-per-session
+    uncertainty_budgets table doesn't yet support — flagged here rather
+    than silently picking one arbitrarily.
+
+    Args:
+        session_id: UUID of the calibration session.
+        instrument: The UUC instrument record.
+        master: The master instrument record.
+
+    Returns:
+        dict: Uncertainty budget fields with session_id included.
+
+    Raises:
+        ValueError: If instrument_subtype is not set or not recognized, if
+            no repeatability test data exists for this session, if more
+            than one setpoint was tested in this session (not yet
+            supported — see note above), or if any required field
+            (including the master's uncertainty_u/accuracy) is missing.
+    """
+    instrument_subtype = instrument.get("instrument_subtype")
+    if not instrument_subtype:
+        raise ValueError(
+            f"instruments.instrument_subtype is not set for instrument "
+            f"{instrument.get('id')}. Required for Temperature — must be one "
+            f"of 'TCK', 'RTD', 'DTI', 'DryBlock'."
+        )
+
+    repeatability_tests = database.get_temperature_repeatability_tests(session_id)
+    if not repeatability_tests:
+        raise ValueError(
+            f"No repeatability test data found for session {session_id}. "
+            f"Enter temperature test readings before calculating the uncertainty budget."
+        )
+    if len(repeatability_tests) > 1:
+        raise ValueError(
+            f"Session {session_id} has {len(repeatability_tests)} temperature "
+            f"setpoints tested, but calculating a budget for more than one "
+            f"setpoint per session is not yet supported — each setpoint needs "
+            f"its own uncertainty budget, and uncertainty_budgets currently "
+            f"only supports one row per session_id."
+        )
+
+    test = repeatability_tests[0]
+    readings_key = "temperature_repeatability_readings"
+    reading_values = [r["reading_value"] for r in test.get(readings_key, [])]
+    if len(reading_values) != 3:
+        raise ValueError(
+            f"Repeatability test for setpoint '{test.get('setpoint_label')}' has "
+            f"{len(reading_values)} of 3 required readings."
+        )
+
+    _require_master_field(master, "uncertainty_u")
+    _require_master_field(master, "accuracy")
+    _require_master_field(master, "claimed_cmc")
+
+    if instrument_subtype == "TCK" and test.get("wire_homogeneity_value") is None:
+        raise ValueError(
+            f"wire_homogeneity_value is required for TCK (thermocouple) instruments "
+            f"but is not set on the repeatability test for setpoint "
+            f"'{test.get('setpoint_label')}'."
+        )
+
+    budget = ce.build_temperature_uncertainty_budget(
+        instrument_subtype=instrument_subtype,
+        repeated_readings=reading_values,
+        master_uncertainty=master["uncertainty_u"],
+        master_accuracy=master["accuracy"],
+        drift_standard_uncertainty=test.get("drift_standard_uncertainty"),
+        resolution=instrument["resolution"],
+        hysteresis_value=test.get("hysteresis_value"),
+        bath_stability_value=test.get("bath_stability_value"),
+        bath_uniformity_value=test.get("bath_uniformity_value"),
+        cmc=master["claimed_cmc"],
+        wire_homogeneity_value=test.get("wire_homogeneity_value"),
     )
     budget["session_id"] = session_id
     return budget
