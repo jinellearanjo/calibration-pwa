@@ -318,9 +318,11 @@ def build_pressure_uncertainty_budget(
     return {
         "type_a_value": type_a,
         "u_std": u_std,
+        "u_std_accuracy": u_std_accuracy,
         "u_res": u_res,
         "u_hys": u_hys,
         "u_zero": u_zero,
+        "u_repeatability": u_repeatability,
         "cmc": cmc,
         "combined_uncertainty": combined,
         "expanded_uncertainty": expanded,
@@ -542,6 +544,307 @@ def build_weighing_uncertainty_budget(
         "cmc": cmc_g,
         "combined_uncertainty": combined,
         "expanded_uncertainty": expanded_g,
+        "k_value": 2.0,
+        "final_applied_uncertainty": final_applied,
+    }
+
+
+# ── Temperature ───────────────────────────────────────────────────────────
+# Four sub-types (TCK, RTD, DTI, DryBlock) share Ua + Ub1-Ub7; TCK alone has
+# an additional Ub8 (wire homogeneity). Every formula below was verified
+# against the real source files' own computed "Standard Uncertainty" column
+# before being implemented - see formulas/temperature.json's
+# anomalies_found for two genuine discrepancies in the source data
+# (Ub3's drift value, and TCK's own buggy Ub7 result) that are NOT
+# reproduced here; the GUM-correct formulas are used instead.
+
+def calculate_type_a_temperature(readings: list[float], n_readings: int = 3) -> float:
+    """Calculate Type A uncertainty for Temperature: standard deviation of
+    repeated readings at a single setpoint, divided by sqrt(n).
+
+    Args:
+        readings: List of repeated reading values at one setpoint
+            (typically 3, per the real source files).
+        n_readings: Number of readings taken (used as the divisor's base;
+            defaults to 3 matching all four source files).
+
+    Returns:
+        float: stdev(readings) / sqrt(n_readings). Returns 0.0 if fewer
+            than 2 readings are provided.
+
+    Raises:
+        ValueError: If readings is empty.
+    """
+    if not readings:
+        raise ValueError("Cannot calculate Type A uncertainty from zero readings.")
+    if len(readings) < 2:
+        return 0.0
+    return statistics.stdev(readings) / math.sqrt(n_readings)
+
+
+def calculate_u_std_temperature(master_uncertainty: float, coverage_factor: float = 2.0) -> float:
+    """Calculate the standard uncertainty contribution from the master
+    instrument's own certificate (Ub1). Same formula as Pressure's
+    calculate_u_std; kept as a separate named function for clarity and
+    in case Temperature's coverage factor convention ever diverges.
+
+    Args:
+        master_uncertainty: master_instruments.uncertainty_u.
+        coverage_factor: Coverage factor the master's uncertainty was
+            expanded with (typically k=2).
+
+    Returns:
+        float: Standard uncertainty (master_uncertainty / coverage_factor).
+
+    Raises:
+        ValueError: If master_uncertainty is None.
+    """
+    if master_uncertainty is None:
+        raise ValueError(
+            "master_instruments.uncertainty_u is not set for the master instrument "
+            "linked to this session. Required to calculate u_std."
+        )
+    return master_uncertainty / coverage_factor
+
+
+def calculate_u_std_accuracy_temperature(master_accuracy: float) -> float:
+    """Calculate the standard uncertainty contribution from the master
+    instrument's accuracy (Ub2), rectangular distribution.
+
+    Args:
+        master_accuracy: master_instruments.accuracy.
+
+    Returns:
+        float: Standard uncertainty (master_accuracy / sqrt(3)).
+
+    Raises:
+        ValueError: If master_accuracy is None.
+    """
+    if master_accuracy is None:
+        raise ValueError(
+            "master_instruments.accuracy is not set for the master instrument "
+            "linked to this session. Required to calculate u_std_accuracy."
+        )
+    return master_accuracy / math.sqrt(3)
+
+
+def calculate_u_drift(drift_standard_uncertainty: float) -> float:
+    """Return the drift uncertainty contribution (Ub3) as a direct
+    pass-through of an already-known standard uncertainty value.
+
+    Deliberately NOT derived from a raw "drift spec value" via a
+    value/divisor formula in-app. Verification against the real source
+    files found the displayed Value column for this component doesn't
+    reliably match its own computed result across TCK/RTD/DTI/DryBlock
+    (e.g. TCK/RTD/DryBlock all show Value=0.017 but a computed result
+    that only matches if the real input were 0.007) - the raw value is
+    not trustworthy enough to re-derive from. This value should be
+    entered directly (temperature_repeatability_tests.drift_standard_uncertainty),
+    the same pattern used for weighing's standard_weights_uncertainty.
+
+    Args:
+        drift_standard_uncertainty: The already-computed drift standard
+            uncertainty, sourced from the supervisor's own worksheet or
+            comparison against the instrument's previous certificate.
+
+    Returns:
+        float: The value passed in, unchanged.
+
+    Raises:
+        ValueError: If drift_standard_uncertainty is None.
+    """
+    if drift_standard_uncertainty is None:
+        raise ValueError(
+            "drift_standard_uncertainty is not set. This must be entered directly "
+            "(not derived from a raw spec value) - see this function's docstring "
+            "for why the source files' raw Value column isn't reliable for this "
+            "component."
+        )
+    return drift_standard_uncertainty
+
+
+def calculate_u_res_temperature(resolution: float) -> float:
+    """Calculate the resolution uncertainty (Ub4), rectangular distribution.
+
+    Args:
+        resolution: instruments.resolution.
+
+    Returns:
+        float: Standard uncertainty ((resolution / 2) / sqrt(3)).
+
+    Raises:
+        ValueError: If resolution is None or negative.
+    """
+    if resolution is None:
+        raise ValueError("instruments.resolution is required to calculate u_res_temperature.")
+    if resolution < 0:
+        raise ValueError(f"resolution must be non-negative, got {resolution}.")
+    return (resolution / 2) / math.sqrt(3)
+
+
+def calculate_u_hys_temperature(hysteresis_value: float) -> float:
+    """Calculate the hysteresis uncertainty (Ub5), rectangular distribution.
+
+    Unlike Pressure/Weighing's hysteresis formulas, there is no /2 half-width
+    step here - the raw value is divided directly by sqrt(3), and its sign
+    is preserved (harmless, since combining via root-sum-square squares it
+    away regardless).
+
+    Args:
+        hysteresis_value: The signed hysteresis reading.
+
+    Returns:
+        float: hysteresis_value / sqrt(3).
+    """
+    if hysteresis_value is None:
+        return 0.0
+    return hysteresis_value / math.sqrt(3)
+
+
+def calculate_u_bath_stability(bath_stability_value: float) -> float:
+    """Calculate the bath stability uncertainty (Ub6), rectangular distribution.
+
+    Args:
+        bath_stability_value: temperature_repeatability_tests.bath_stability_value.
+
+    Returns:
+        float: bath_stability_value / sqrt(3).
+
+    Raises:
+        ValueError: If bath_stability_value is None.
+    """
+    if bath_stability_value is None:
+        raise ValueError("bath_stability_value is required to calculate u_bath_stability.")
+    return bath_stability_value / math.sqrt(3)
+
+
+def calculate_u_bath_uniformity(bath_uniformity_value: float) -> float:
+    """Calculate the bath uniformity uncertainty (Ub7), rectangular
+    distribution. Uses the verified value/sqrt(3) formula - NOT TCK's own
+    displayed result of 0 for this component, which was confirmed to be a
+    spreadsheet bug (see formulas/temperature.json's anomalies_found).
+
+    Args:
+        bath_uniformity_value: temperature_repeatability_tests.bath_uniformity_value.
+
+    Returns:
+        float: bath_uniformity_value / sqrt(3).
+
+    Raises:
+        ValueError: If bath_uniformity_value is None.
+    """
+    if bath_uniformity_value is None:
+        raise ValueError("bath_uniformity_value is required to calculate u_bath_uniformity.")
+    return bath_uniformity_value / math.sqrt(3)
+
+
+def calculate_u_wire_homogeneity(wire_homogeneity_value: float) -> float:
+    """Calculate the thermocouple wire homogeneity uncertainty (Ub8),
+    rectangular distribution. TCK sub-type only.
+
+    Args:
+        wire_homogeneity_value: temperature_repeatability_tests.wire_homogeneity_value.
+
+    Returns:
+        float: wire_homogeneity_value / sqrt(3).
+
+    Raises:
+        ValueError: If wire_homogeneity_value is None.
+    """
+    if wire_homogeneity_value is None:
+        raise ValueError(
+            "wire_homogeneity_value is required to calculate u_wire_homogeneity "
+            "for a TCK (thermocouple) instrument."
+        )
+    return wire_homogeneity_value / math.sqrt(3)
+
+
+def build_temperature_uncertainty_budget(
+    instrument_subtype: str,
+    repeated_readings: list[float],
+    master_uncertainty: float,
+    master_accuracy: float,
+    drift_standard_uncertainty: float,
+    resolution: float,
+    hysteresis_value: float,
+    bath_stability_value: float,
+    bath_uniformity_value: float,
+    cmc: float,
+    wire_homogeneity_value: float = None,
+) -> dict:
+    """Orchestrate the full Temperature uncertainty budget calculation.
+
+    Args:
+        instrument_subtype: One of 'TCK', 'RTD', 'DTI', 'DryBlock'.
+        repeated_readings: The repeated readings at this setpoint (typically 3).
+        master_uncertainty: master_instruments.uncertainty_u.
+        master_accuracy: master_instruments.accuracy.
+        drift_standard_uncertainty: Pre-computed drift figure - see
+            calculate_u_drift's docstring.
+        resolution: instruments.resolution.
+        hysteresis_value: Signed hysteresis reading.
+        bath_stability_value: Raw bath stability value.
+        bath_uniformity_value: Raw bath uniformity value.
+        cmc: master_instruments.claimed_cmc.
+        wire_homogeneity_value: Raw wire homogeneity value. Required if
+            instrument_subtype is 'TCK', ignored otherwise.
+
+    Returns:
+        dict: Uncertainty budget fields matching UncertaintyBudgetCreate,
+            ready for database.insert_uncertainty_budget after adding
+            session_id.
+
+    Raises:
+        ValueError: If instrument_subtype is 'TCK' and wire_homogeneity_value
+            is not provided, if instrument_subtype is not one of the four
+            known sub-types, or if any required field is missing
+            (propagated from the individual calculate_* functions).
+    """
+    valid_subtypes = {"TCK", "RTD", "DTI", "DryBlock"}
+    if instrument_subtype not in valid_subtypes:
+        raise ValueError(
+            f"Unknown instrument_subtype '{instrument_subtype}' for Temperature. "
+            f"Must be one of: {sorted(valid_subtypes)}."
+        )
+
+    type_a = calculate_type_a_temperature(repeated_readings, n_readings=len(repeated_readings) or 3)
+    u_std = calculate_u_std_temperature(master_uncertainty)
+    u_std_accuracy = calculate_u_std_accuracy_temperature(master_accuracy)
+    u_drift = calculate_u_drift(drift_standard_uncertainty)
+    u_res = calculate_u_res_temperature(resolution)
+    u_hys = calculate_u_hys_temperature(hysteresis_value)
+    u_bath_stability = calculate_u_bath_stability(bath_stability_value)
+    u_bath_uniformity = calculate_u_bath_uniformity(bath_uniformity_value)
+
+    components = [type_a, u_std, u_std_accuracy, u_drift, u_res, u_hys, u_bath_stability, u_bath_uniformity]
+
+    u_wire_homogeneity = None
+    if instrument_subtype == "TCK":
+        if wire_homogeneity_value is None:
+            raise ValueError(
+                "wire_homogeneity_value is required for TCK (thermocouple) instruments "
+                "but was not provided."
+            )
+        u_wire_homogeneity = calculate_u_wire_homogeneity(wire_homogeneity_value)
+        components.append(u_wire_homogeneity)
+
+    combined = calculate_combined_uncertainty(*components)
+    expanded = calculate_expanded_uncertainty(combined, k=2.0)
+    final_applied = calculate_final_applied_uncertainty(expanded, cmc)
+
+    return {
+        "type_a_value": type_a,
+        "u_std": u_std,
+        "u_std_accuracy": u_std_accuracy,
+        "u_drift": u_drift,
+        "u_res": u_res,
+        "u_hys": u_hys,
+        "u_bath_stability": u_bath_stability,
+        "u_bath_uniformity": u_bath_uniformity,
+        "u_wire_homogeneity": u_wire_homogeneity,
+        "cmc": cmc,
+        "combined_uncertainty": combined,
+        "expanded_uncertainty": expanded,
         "k_value": 2.0,
         "final_applied_uncertainty": final_applied,
     }
