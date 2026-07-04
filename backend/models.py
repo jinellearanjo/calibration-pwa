@@ -27,6 +27,7 @@ class InstrumentCreate(BaseModel):
     """
     name: str
     type: str
+    instrument_subtype: Optional[str] = None
     make: str
     model: str
     serial_number: str
@@ -175,13 +176,19 @@ class UncertaintyBudgetCreate(BaseModel):
     session_id: UUID
     type_a_value: float
     u_std: Optional[float] = None
+    u_std_accuracy: Optional[float] = None
     u_res: Optional[float] = None
     u_hys: Optional[float] = None
     u_head: Optional[float] = None
     u_zero: Optional[float] = None
     u_temp: Optional[float] = None
+    u_repeatability: Optional[float] = None
     u_std_weights: Optional[float] = None
     u_eccentric: Optional[float] = None
+    u_drift: Optional[float] = None
+    u_bath_stability: Optional[float] = None
+    u_bath_uniformity: Optional[float] = None
+    u_wire_homogeneity: Optional[float] = None
     cmc: float
     combined_uncertainty: float
     expanded_uncertainty: float
@@ -300,3 +307,57 @@ class CMCBandCreate(BaseModel):
     cmc_value: float
     cmc_unit: str
     standard_ref: Optional[str] = None
+
+
+# ── Temperature repeatability test models ───────────────────────────────────
+# Mirrors the weighing_repeatability_* pattern: one row per setpoint tested,
+# each with 3 repeated readings, rather than the single ascending/descending
+# per-point shape used by the 'readings' table for Pressure/Electrical.
+
+class TemperatureRepeatabilityTestCreate(BaseModel):
+    """Pydantic model for creating a temperature repeatability test record.
+
+    One record per setpoint tested (e.g. -15C, 110C, 300C, 650C). Each
+    setpoint has 3 associated readings — see
+    TemperatureRepeatabilityReadingCreate.
+
+    Attributes:
+        session_id: UUID of the parent calibration session.
+        setpoint_label: Free-text label for this setpoint (e.g. 'minus_15c').
+        nominal_temperature: The nominal temperature at this setpoint.
+        unit: Unit of measurement (default 'C').
+        standard_uncertainty: Master's own cert uncertainty at this setpoint (Ub1).
+        standard_accuracy: Master's accuracy at this setpoint (Ub2).
+        drift_standard_uncertainty: Pre-computed drift figure (Ub3) — entered
+            directly rather than derived from a raw spec value; see
+            calculation_engine.calculate_u_drift's docstring for why.
+        hysteresis_value: Signed hysteresis reading at this setpoint (Ub5).
+        bath_stability_value: Raw bath stability value (Ub6).
+        bath_uniformity_value: Raw bath uniformity value (Ub7).
+        wire_homogeneity_value: Raw wire homogeneity value (Ub8), TCK
+            sub-type only; null for RTD/DTI/DryBlock.
+    """
+    session_id: UUID
+    setpoint_label: str
+    nominal_temperature: float
+    unit: str = "C"
+    standard_uncertainty: Optional[float] = None
+    standard_accuracy: Optional[float] = None
+    drift_standard_uncertainty: Optional[float] = None
+    hysteresis_value: Optional[float] = None
+    bath_stability_value: Optional[float] = None
+    bath_uniformity_value: Optional[float] = None
+    wire_homogeneity_value: Optional[float] = None
+
+
+class TemperatureRepeatabilityReadingCreate(BaseModel):
+    """Pydantic model for creating a single temperature repeatability reading.
+
+    Attributes:
+        test_id: UUID of the parent TemperatureRepeatabilityTest.
+        reading_number: Which of the 3 readings this is (1-3).
+        reading_value: The recorded temperature reading.
+    """
+    test_id: UUID
+    reading_number: int
+    reading_value: float
