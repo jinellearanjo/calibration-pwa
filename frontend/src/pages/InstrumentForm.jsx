@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import { useUnsavedWarning } from "../hooks/useUnsavedWarning";
-import { createInstrument, createCalibrationReference } from "../api";
+import { createInstrument } from "../api";
 
 /**
  * InstrumentForm component.
@@ -29,6 +29,7 @@ function InstrumentForm() {
   const [uucData, setUucData] = useState({
     name: "",
     type: "",
+    instrument_subtype: "",
     make: "",
     model: "",
     serial_number: "",
@@ -87,12 +88,17 @@ function InstrumentForm() {
 
     setIsSubmitting(true);
     try {
-      // First create the instrument, then create the calibration reference linked to a session.
+      // Create the instrument now. refData (certificate number, customer
+      // details, etc.) can't be submitted yet - calibration_reference
+      // requires a session_id, and no session exists until SessionForm's
+      // own submit. Carry refData forward via navigation state; SessionForm
+      // submits it once the new session's id is available.
       const created = await createInstrument(uucData);
       const newInstrumentId = created?.[0]?.id;
-      await createCalibrationReference(refData);
       setIsDirty(false);
-      navigate("/session", { state: { instrumentId: newInstrumentId, instrumentType: uucData.type } });
+      navigate("/session", {
+        state: { instrumentId: newInstrumentId, instrumentType: uucData.type, calibrationReference: refData },
+      });
     } catch (err) {
       setErrors(prev => ({ ...prev, submit: err.message }));
     } finally {
@@ -137,6 +143,16 @@ function InstrumentForm() {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 24px" }}>
             <Field label="Instrument Name" id="name" value={uucData.name} onChange={v => updateUuc("name", v)} error={errors.name} />
             <SelectField label="Type" id="type" value={uucData.type} onChange={v => updateUuc("type", v)} error={errors.type} options={["Pressure", "Temperature", "Electrical", "Weighing"]} />
+            {uucData.type === "Temperature" && (
+              <SelectField
+                label="Sensor Sub-Type"
+                id="instrument_subtype"
+                value={uucData.instrument_subtype || ""}
+                onChange={v => updateUuc("instrument_subtype", v)}
+                error={errors.instrument_subtype}
+                options={["TCK", "RTD", "DTI", "DryBlock"]}
+              />
+            )}
             <Field label="Make" id="make" value={uucData.make} onChange={v => updateUuc("make", v)} error={errors.make} />
             <Field label="Model" id="model" value={uucData.model} onChange={v => updateUuc("model", v)} error={errors.model} />
             <Field label="Serial Number" id="serial_number" value={uucData.serial_number} onChange={v => updateUuc("serial_number", v)} error={errors.serial_number} />
