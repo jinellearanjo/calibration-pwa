@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import { useUnsavedWarning } from "../hooks/useUnsavedWarning";
 import {
@@ -74,8 +74,7 @@ function initialHysteresisState() {
  */
 function WeighingReadingsForm() {
   const navigate = useNavigate();
-  const location = useLocation();
-  const sessionId = location.state?.sessionId;
+  const { sessionId } = useParams();
   const { setIsDirty, safeNavigate } = useUnsavedWarning();
 
   const [repeatability, setRepeatability] = useState(initialRepeatabilityState());
