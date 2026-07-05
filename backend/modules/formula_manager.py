@@ -130,6 +130,12 @@ def build_uncertainty_budget(session_id: str) -> dict:
 def _build_pressure_budget(session_id: str, instrument: dict, master: dict) -> dict:
     """Build the uncertainty budget for a Pressure session.
 
+    CMC is looked up from cmc_bands by the highest nominal_value tested,
+    not taken from master_instruments.claimed_cmc — see
+    calculation_engine.build_pressure_uncertainty_budget's docstring for
+    why this changed after extracting real range-dependent CMC data from
+    the supervisor's CMC_CALCULATION_-PRESSURE-_2023.xls file.
+
     Args:
         session_id: UUID of the calibration session.
         instrument: The UUC instrument record.
@@ -139,10 +145,10 @@ def _build_pressure_budget(session_id: str, instrument: dict, master: dict) -> d
         dict: Uncertainty budget fields with session_id included.
 
     Raises:
-        ValueError: If readings are missing, or the master instrument is
-            missing uncertainty_u, accuracy, or claimed_cmc (the fields
-            still marked "TBA" in the reference workbook for most
-            instruments as of the last check).
+        ValueError: If readings are missing, if the master instrument is
+            missing uncertainty_u or accuracy (still marked "TBA" in the
+            reference workbook for most instruments as of the last
+            check), or if no cmc_bands entry covers the tested range.
     """
     readings = database.get_readings(session_id)
     if not readings:
@@ -153,14 +159,23 @@ def _build_pressure_budget(session_id: str, instrument: dict, master: dict) -> d
 
     _require_master_field(master, "uncertainty_u")
     _require_master_field(master, "accuracy")
-    _require_master_field(master, "claimed_cmc")
+
+    cmc_bands_response = database.supabase.table("cmc_bands").select("*").eq(
+        "instrument_type", "Pressure"
+    ).execute()
+    cmc_bands = cmc_bands_response.data
+    if not cmc_bands:
+        raise ValueError(
+            "cmc_bands table has no rows for instrument_type='Pressure'. "
+            "Seed this table before calculating pressure uncertainty budgets."
+        )
 
     budget = ce.build_pressure_uncertainty_budget(
         readings=readings,
         master_uncertainty=master["uncertainty_u"],
         master_accuracy=master["accuracy"],
         resolution=instrument["resolution"],
-        cmc=master["claimed_cmc"],
+        cmc_bands=cmc_bands,
     )
     budget["session_id"] = session_id
     return budget
