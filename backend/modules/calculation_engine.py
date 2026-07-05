@@ -277,9 +277,18 @@ def build_pressure_uncertainty_budget(
     master_uncertainty: float,
     master_accuracy: float,
     resolution: float,
-    cmc: float,
+    cmc_bands: list[dict],
 ) -> dict:
     """Orchestrate the full Pressure uncertainty budget calculation.
+
+    CMC is looked up from cmc_bands by the highest nominal_value tested
+    across the session's readings, rather than taken as a flat
+    master_instruments.claimed_cmc value. This matches how Weighing
+    already works, and was changed here after extracting real data from
+    the supervisor's CMC_CALCULATION_-PRESSURE-_2023.xls file, which shows
+    CMC is genuinely range-dependent for Pressure too (e.g. ~0.0106 bar
+    near 1 bar vs ~11.9 bar near 2500 bar) - a flat per-instrument number
+    can't represent that.
 
     Args:
         readings: List of reading dicts for the session (point_number,
@@ -289,7 +298,7 @@ def build_pressure_uncertainty_budget(
         master_accuracy: master_instruments.accuracy for the master
             instrument used.
         resolution: instruments.resolution for the UUC.
-        cmc: master_instruments.claimed_cmc.
+        cmc_bands: All cmc_bands records for instrument_type='Pressure'.
 
     Returns:
         dict: All uncertainty budget fields, matching the shape expected
@@ -297,9 +306,9 @@ def build_pressure_uncertainty_budget(
             database.insert_uncertainty_budget after adding session_id.
 
     Raises:
-        ValueError: If readings is empty or required master instrument
+        ValueError: If readings is empty, required master instrument
             fields are missing (propagated from the individual calculate_*
-            functions).
+            functions), or no cmc_bands entry covers the tested range.
     """
     type_a = calculate_type_a(readings)
     u_std = calculate_u_std(master_uncertainty)
@@ -313,6 +322,17 @@ def build_pressure_uncertainty_budget(
         type_a, u_std, u_std_accuracy, u_res, u_zero, u_repeatability, u_hys
     )
     expanded = calculate_expanded_uncertainty(combined, k=2.0)
+
+    highest_nominal_value = max(abs(r["nominal_value"]) for r in readings)
+    cmc_band = lookup_cmc_band(cmc_bands, highest_nominal_value)
+    if cmc_band is None:
+        raise ValueError(
+            f"No CMC band found covering nominal value {highest_nominal_value} "
+            f"for instrument_type='Pressure'. Check that cmc_bands has been "
+            f"seeded with the correct ranges."
+        )
+    cmc = cmc_band["cmc_value"]
+
     final_applied = calculate_final_applied_uncertainty(expanded, cmc)
 
     return {
