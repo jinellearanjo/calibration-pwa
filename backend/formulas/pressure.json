@@ -58,10 +58,21 @@
   "expanded_uncertainty": {
     "method": "combined_uncertainty * coverage_factor"
   },
-  "cmc_source": "master_instruments.claimed_cmc",
-  "final_applied": "max(expanded_uncertainty, cmc)",
+  "cmc_source": "cmc_bands lookup by highest nominal_value tested, instrument_type='Pressure' - changed from a flat master_instruments.claimed_cmc after extracting real range-dependent CMC data (see cmc_table below)",
+  "final_applied": "max(expanded_uncertainty, cmc_lookup(highest_nominal_value_bar))",
+  "cmc_table": {
+    "note": "Extracted from CMC_CALCULATION_-PRESSURE-_2023.xls (PROCAL Lab & Site Facility document - confirm this applies to Instruworks' own accreditation scope, not just a reference lab's). Each band's value is the maximum Expanded Uncertainty (Ue) found across that range's tested points. Two anomalies were found and handled explicitly rather than silently reproduced: (1) the 140bar range showed an isolated spike at the 84bar test point (0.4766, ~5x its neighbors) that breaks an otherwise clean monotonic trend - excluded, using the range's own endpoint (140bar -> 0.166876) instead, which fits the trend. (2) the 700bar range shows an identical value at every single tested point (1.699137, no pressure dependence at all) - unlike every other range's clear increasing trend. Used as-is since it's at least internally consistent, but this pattern should be confirmed with Charkha directly - it may be a formula that never actually varied per row.",
+    "bands": [
+      {"min_bar": -1, "max_bar": 1, "cmc_bar": 0.010083},
+      {"min_bar": 1, "max_bar": 40, "cmc_bar": 0.094648},
+      {"min_bar": 40, "max_bar": 140, "cmc_bar": 0.166876},
+      {"min_bar": 140, "max_bar": 700, "cmc_bar": 1.699137},
+      {"min_bar": 700, "max_bar": 1600, "cmc_bar": 5.566567},
+      {"min_bar": 1600, "max_bar": 2500, "cmc_bar": 11.902381}
+    ]
+  },
   "acceptance_scope_table": {
-    "note": "Found embedded in the source file (sheet 'MU', column O). This may partially satisfy the 'acceptance limits' requirement for Pressure specifically — confirm with Charkha before seeding acceptance_limits from this rather than waiting on a separate file.",
+    "note": "Distinct from cmc_table above - this is the UUC's own pass/fail tolerance spec (used by validation.py's acceptance_limits check), not the lab's calibration capability (CMC, used in final_applied_uncertainty). Found embedded in the source file (sheet 'MU', column O). This may partially satisfy the 'acceptance limits' requirement for Pressure specifically — confirm with Charkha before seeding acceptance_limits from this rather than waiting on a separate file.",
     "pneumatic_gauge_bands": [
       {"min_bar": -1, "max_bar": 0, "limit_bar": 0.02},
       {"min_bar": 0, "max_bar": 40, "limit_bar": 0.03}
