@@ -13,10 +13,10 @@ function Dashboard() {
     { number: "01", label: "Register Instrument", description: "Add calibration reference details and instrument under calibration.", path: "/instrument" },
     { number: "02", label: "Master Instrument", description: "Search, select, or register the reference standard used.", path: "/master" },
     { number: "03", label: "Calibration Session", description: "Set the session date, technician, and environmental conditions.", path: "/session" },
-    { number: "04", label: "Enter Readings", description: "Record ascending and descending measurements for each calibration cycle.", path: null },
-    { number: "05", label: "Calculate Uncertainty", description: "Run the uncertainty calculation for this session.", path: null },
-    { number: "06", label: "Validate Results", description: "Review the compliance status and uncertainty budget.", path: null },
-    { number: "07", label: "Generate Certificate", description: "Generate the calibration certificate as PDF or Excel.", path: null },
+    { number: "04", label: "Enter Readings", description: "Record ascending and descending measurements for each calibration cycle.", path: "/readings" },
+    { number: "05", label: "Calculate Uncertainty", description: "Run the uncertainty calculation for this session.", path: "/calculation" },
+    { number: "06", label: "Validate Results", description: "Review the compliance status and uncertainty budget.", path: "/results" },
+    { number: "07", label: "Generate Certificate", description: "Generate the calibration certificate as PDF or Excel.", path: "/report" },
   ];
 
   return (
