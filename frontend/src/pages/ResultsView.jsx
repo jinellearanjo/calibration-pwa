@@ -1,42 +1,67 @@
 import { getResults } from "../api";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import StatusBadge from "../components/StatusBadge";
 import Spinner from "../components/Spinner";
+import SessionPicker from "../components/SessionPicker";
 
 /**
  * ResultsView component.
  * Displays the validation result for a calibration session including
  * status, uncertainty values, acceptance limit, CMC, and any flags.
+ *
+ * Reachable two ways:
+ *  - Directly from CalculationView with :sessionId already in the URL
+ *    (/results/:sessionId) - behaves exactly as before, no picker shown.
+ *  - From the Dashboard card with no session in the URL (/results) - a
+ *    SessionPicker is shown above the content, and Generate Report stays
+ *    disabled until a session is chosen. Works across refreshes and new
+ *    tabs - relies only on the URL param or the in-memory picker
+ *    selection, never localStorage or navigation state.
  */
 function ResultsView() {
-  const { sessionId } = useParams();
+  const { sessionId: urlSessionId } = useParams();
   const navigate = useNavigate();
+
+  const [pickedSessionId, setPickedSessionId] = useState(null);
+  const effectiveSessionId = urlSessionId || pickedSessionId;
+  const showPicker = !urlSessionId;
+
   const [result, setResult] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-      getResults(sessionId)
-        .then(data => {
-          setResult(data);
-          setLoading(false);
-        })
-        .catch(err => {
-          setError(err.message);
-          setLoading(false);
-        });
-    }, [sessionId]);
+  const loadResults = useCallback(() => {
+    if (!effectiveSessionId) {
+      setResult(null);
+      setError(null);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    getResults(effectiveSessionId)
+      .then(data => {
+        setResult(data);
+        setLoading(false);
+      })
+      .catch(err => {
+        setError(err.message);
+        setLoading(false);
+      });
+  }, [effectiveSessionId]);
 
-  if (loading) return <Spinner message="Loading results..." />;
+  useEffect(() => {
+    loadResults();
+  }, [loadResults]);
+
+  const noSessionSelected = !effectiveSessionId;
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--color-bg)" }}>
       <Navbar />
       <div style={{ maxWidth: 700, margin: "0 auto", padding: "48px 32px" }}>
 
-        {/* Page header */}
         <div style={{ marginBottom: 32 }}>
           <p style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--color-accent)", marginBottom: 8 }}>
             Step 06
@@ -48,6 +73,12 @@ function ResultsView() {
             Compliance status and uncertainty summary for this session.
           </p>
         </div>
+
+        {showPicker && (
+          <SessionPicker selectedSessionId={pickedSessionId} onSelect={setPickedSessionId} />
+        )}
+
+        {loading && <Spinner message="Loading results..." />}
 
         {error && (
           <div style={{
@@ -63,122 +94,133 @@ function ResultsView() {
           </div>
         )}
 
-        {result && (
-          <>
-            {/* Status card */}
-            <div style={{
-              background: "var(--color-surface)",
-              border: "1px solid var(--color-border)",
-              borderLeft: "4px solid var(--color-primary)",
-              borderRadius: "var(--radius)",
-              padding: "20px 24px",
-              marginBottom: 16,
-              boxShadow: "var(--shadow-sm)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}>
-              <div>
-                <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--color-muted)", marginBottom: 6 }}>
-                  Compliance Report
-                </p>
-                <StatusBadge status={result.status} />
-              </div>
-            </div>
+        {!loading && noSessionSelected && !result && (
+          <div style={{
+            background: "var(--color-surface)", border: "1px solid var(--color-border)",
+            borderRadius: "var(--radius)", padding: "32px", textAlign: "center",
+            boxShadow: "var(--shadow-sm)",
+          }}>
+            <p style={{ color: "var(--color-muted)", fontSize: 14 }}>
+              Select a session above to view its validation results.
+            </p>
+          </div>
+        )}
 
-            {/* Uncertainty values */}
-            <div style={{
-              background: "var(--color-surface)",
-              border: "1px solid var(--color-border)",
-              borderRadius: "var(--radius)",
-              boxShadow: "var(--shadow-sm)",
-              overflow: "hidden",
-              marginBottom: 16,
-            }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                <thead>
-                  <tr style={{ background: "var(--color-primary)" }}>
-                    <th style={thStyle}>Parameter</th>
-                    <th style={{ ...thStyle, textAlign: "right" }}>Value</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <ResultRow
-                    label="Final Applied Uncertainty"
-                    value={result.final_applied_uncertainty !== null ? `± ${result.final_applied_uncertainty}` : "—"}
-                  />
-                  <ResultRow
-                    label="Acceptance Limit"
-                    value={result.acceptance_limit !== null ? result.acceptance_limit : "—"}
-                    alt
-                  />
-                  <ResultRow
-                    label="CMC"
-                    value={result.cmc !== null ? result.cmc : "—"}
-                  />
-                </tbody>
-              </table>
-            </div>
-
-            {/* Flags */}
-            {result.flags && result.flags.length > 0 && (
+        <div style={{ opacity: noSessionSelected ? 0.5 : 1, transition: "opacity 0.15s" }}>
+          {result && (
+            <>
               <div style={{
-                background: "#FFFBEB",
-                border: "1px solid #FDE68A",
+                background: "var(--color-surface)",
+                border: "1px solid var(--color-border)",
+                borderLeft: "4px solid var(--color-primary)",
                 borderRadius: "var(--radius)",
-                padding: "16px 20px",
+                padding: "20px 24px",
+                marginBottom: 16,
+                boxShadow: "var(--shadow-sm)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}>
+                <div>
+                  <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--color-muted)", marginBottom: 6 }}>
+                    Compliance Report
+                  </p>
+                  <StatusBadge status={result.status} />
+                </div>
+              </div>
+
+              <div style={{
+                background: "var(--color-surface)",
+                border: "1px solid var(--color-border)",
+                borderRadius: "var(--radius)",
+                boxShadow: "var(--shadow-sm)",
+                overflow: "hidden",
                 marginBottom: 16,
               }}>
-                <p style={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: "#92400E", marginBottom: 10 }}>
-                  Flags
-                </p>
-                <ul style={{ margin: 0, paddingLeft: 16 }}>
-                  {result.flags.map((flag, index) => (
-                    <li key={index} style={{ fontSize: 13, color: "#78350F", marginBottom: 4 }}>
-                      {flag}
-                    </li>
-                  ))}
-                </ul>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: "var(--color-primary)" }}>
+                      <th style={thStyle}>Parameter</th>
+                      <th style={{ ...thStyle, textAlign: "right" }}>Value</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <ResultRow
+                      label="Final Applied Uncertainty"
+                      value={result.final_applied_uncertainty !== null ? `± ${result.final_applied_uncertainty}` : "—"}
+                    />
+                    <ResultRow
+                      label="Acceptance Limit"
+                      value={result.acceptance_limit !== null ? result.acceptance_limit : "—"}
+                      alt
+                    />
+                    <ResultRow
+                      label="CMC"
+                      value={result.cmc !== null ? result.cmc : "—"}
+                    />
+                  </tbody>
+                </table>
               </div>
-            )}
 
-            {/* Actions */}
-            <div style={{ display: "flex", gap: 12, marginTop: 24 }}>
-              <button
-                onClick={() => navigate(`/report/${sessionId}`)}
-                style={{
-                  padding: "10px 24px",
-                  background: "var(--color-primary)",
-                  color: "white",
-                  border: "none",
+              {result.flags && result.flags.length > 0 && (
+                <div style={{
+                  background: "#FFFBEB",
+                  border: "1px solid #FDE68A",
                   borderRadius: "var(--radius)",
-                  fontSize: 13,
-                  fontWeight: 500,
-                  cursor: "pointer",
-                }}
-                onMouseEnter={e => e.currentTarget.style.background = "var(--color-primary-hover)"}
-                onMouseLeave={e => e.currentTarget.style.background = "var(--color-primary)"}
-              >
-                Generate Report
-              </button>
-              <button
-                onClick={() => navigate("/history")}
-                style={{
-                  padding: "10px 24px",
-                  background: "white",
-                  color: "var(--color-text)",
-                  border: "1px solid var(--color-border)",
-                  borderRadius: "var(--radius)",
-                  fontSize: 13,
-                  fontWeight: 500,
-                  cursor: "pointer",
-                }}
-              >
-                Back to History
-              </button>
-            </div>
-          </>
-        )}
+                  padding: "16px 20px",
+                  marginBottom: 16,
+                }}>
+                  <p style={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: "#92400E", marginBottom: 10 }}>
+                    Flags
+                  </p>
+                  <ul style={{ margin: 0, paddingLeft: 16 }}>
+                    {result.flags.map((flag, index) => (
+                      <li key={index} style={{ fontSize: 13, color: "#78350F", marginBottom: 4 }}>
+                        {flag}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              <div style={{ display: "flex", gap: 12, marginTop: 24 }}>
+                <button
+                  onClick={() => navigate(`/report/${effectiveSessionId}`)}
+                  disabled={noSessionSelected}
+                  style={{
+                    padding: "10px 24px",
+                    background: noSessionSelected ? "var(--color-border)" : "var(--color-primary)",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "var(--radius)",
+                    fontSize: 13,
+                    fontWeight: 500,
+                    cursor: noSessionSelected ? "not-allowed" : "pointer",
+                  }}
+                  onMouseEnter={e => { if (!noSessionSelected) e.currentTarget.style.background = "var(--color-primary-hover)"; }}
+                  onMouseLeave={e => { if (!noSessionSelected) e.currentTarget.style.background = "var(--color-primary)"; }}
+                >
+                  Generate Report
+                </button>
+                <button
+                  onClick={() => navigate("/history")}
+                  style={{
+                    padding: "10px 24px",
+                    background: "white",
+                    color: "var(--color-text)",
+                    border: "1px solid var(--color-border)",
+                    borderRadius: "var(--radius)",
+                    fontSize: 13,
+                    fontWeight: 500,
+                    cursor: "pointer",
+                  }}
+                >
+                  Back to History
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
