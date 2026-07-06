@@ -2,24 +2,30 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import Spinner from "../components/Spinner";
+import SessionPicker from "../components/SessionPicker";
 import { getUncertaintyBudget, calculateUncertainty } from "../api";
 
 // Every possible uncertainty budget field, across all categories, with a
-// human-readable label. Pressure and Weighing populate different subsets
-// of these (see calculation_engine.py's build_pressure_uncertainty_budget
-// vs build_weighing_uncertainty_budget) - only fields actually present
-// (not null/undefined) in the returned budget are rendered, so this list
-// doubles as documentation for what a full budget could ever contain.
+// human-readable label. Pressure and Weighing/Temperature populate
+// different subsets of these (see calculation_engine.py's build_*
+// functions) - only fields actually present (not null/undefined) in the
+// returned budget are rendered.
 const COMPONENT_FIELDS = [
   { key: "type_a_value", label: "Type A Uncertainty", group: "type_a" },
   { key: "u_std", label: "Standard's Uncertainty (u_std)", group: "type_b" },
+  { key: "u_std_accuracy", label: "Standard's Accuracy Uncertainty (u_std_accuracy)", group: "type_b" },
   { key: "u_res", label: "Resolution Uncertainty (u_res)", group: "type_b" },
   { key: "u_hys", label: "Hysteresis Uncertainty (u_hys)", group: "type_b" },
   { key: "u_zero", label: "Zero Error Uncertainty (u_zero)", group: "type_b" },
   { key: "u_head", label: "Medium Head Correction (u_head)", group: "type_b" },
   { key: "u_temp", label: "Temperature Influence (u_temp)", group: "type_b" },
+  { key: "u_repeatability", label: "Repeatability Uncertainty (u_repeatability)", group: "type_b" },
   { key: "u_std_weights", label: "Standard Weights Uncertainty (u_std_weights)", group: "type_b" },
   { key: "u_eccentric", label: "Eccentric Loading Uncertainty (u_eccentric)", group: "type_b" },
+  { key: "u_drift", label: "Drift of Standard Uncertainty (u_drift)", group: "type_b" },
+  { key: "u_bath_stability", label: "Bath Stability Uncertainty (u_bath_stability)", group: "type_b" },
+  { key: "u_bath_uniformity", label: "Bath Uniformity Uncertainty (u_bath_uniformity)", group: "type_b" },
+  { key: "u_wire_homogeneity", label: "Wire Homogeneity Uncertainty (u_wire_homogeneity)", group: "type_b" },
 ];
 
 const SUMMARY_FIELDS = [
@@ -30,12 +36,6 @@ const SUMMARY_FIELDS = [
   { key: "final_applied_uncertainty", label: "Final Applied Uncertainty" },
 ];
 
-// The exact message main.py's GET /budget endpoint returns when no budget
-// exists yet for a session. Matched against here to distinguish "not
-// calculated yet, that's fine" from a real error - api.js's request()
-// helper doesn't currently preserve HTTP status codes on thrown errors,
-// only the detail message, so string matching is the pragmatic option
-// without a broader api.js refactor.
 const NOT_YET_CALCULATED_MESSAGE = "Uncertainty budget not found.";
 
 /**
@@ -43,25 +43,41 @@ const NOT_YET_CALCULATED_MESSAGE = "Uncertainty budget not found.";
  * Fetches an existing uncertainty budget for a session if one exists, or
  * offers to calculate one via POST /api/sessions/{id}/calculate. Displays
  * the full component breakdown once available, with fields shown only if
- * present - Pressure and Weighing populate different subsets of
- * COMPONENT_FIELDS, and Temperature/Electrical currently return a 501 from
- * the backend, surfaced here as a clear "not yet available" message rather
- * than a generic error.
+ * present.
+ *
+ * Reachable two ways:
+ *  - Directly from ReadingsForm with :sessionId already in the URL
+ *    (/calculation/:sessionId) - behaves exactly as before, no picker shown.
+ *  - From the Dashboard card with no session in the URL (/calculation) -
+ *    a SessionPicker is shown above the content, and the Calculate/
+ *    Recalculate/Continue buttons stay disabled until a session is
+ *    chosen. Works across refreshes and new tabs - relies only on the
+ *    URL param or the in-memory picker selection.
  */
 function CalculationView() {
-  const { sessionId } = useParams();
+  const { sessionId: urlSessionId } = useParams();
   const navigate = useNavigate();
 
+  const [pickedSessionId, setPickedSessionId] = useState(null);
+  const effectiveSessionId = urlSessionId || pickedSessionId;
+  const showPicker = !urlSessionId;
+
   const [budget, setBudget] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [calculating, setCalculating] = useState(false);
   const [error, setError] = useState(null);
   const [notYetCalculated, setNotYetCalculated] = useState(false);
 
   const loadExistingBudget = useCallback(() => {
+    if (!effectiveSessionId) {
+      setBudget(null);
+      setNotYetCalculated(false);
+      setError(null);
+      return;
+    }
     setLoading(true);
     setError(null);
-    getUncertaintyBudget(sessionId)
+    getUncertaintyBudget(effectiveSessionId)
       .then(data => {
         setBudget(data);
         setNotYetCalculated(false);
@@ -75,16 +91,17 @@ function CalculationView() {
         }
         setLoading(false);
       });
-  }, [sessionId]);
+  }, [effectiveSessionId]);
 
   useEffect(() => {
     loadExistingBudget();
   }, [loadExistingBudget]);
 
   function handleCalculate() {
+    if (!effectiveSessionId) return;
     setCalculating(true);
     setError(null);
-    calculateUncertainty(sessionId)
+    calculateUncertainty(effectiveSessionId)
       .then(data => {
         setBudget(data);
         setNotYetCalculated(false);
@@ -96,11 +113,11 @@ function CalculationView() {
       });
   }
 
-  if (loading) return <Spinner message="Checking for an existing calculation..." />;
-
   const presentComponentFields = budget
     ? COMPONENT_FIELDS.filter(f => budget[f.key] !== null && budget[f.key] !== undefined)
     : [];
+
+  const noSessionSelected = !effectiveSessionId;
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--color-bg)" }}>
@@ -119,87 +136,82 @@ function CalculationView() {
           </p>
         </div>
 
-        {error && (
-          <div style={{
-            padding: "14px 16px",
-            background: "#FEF2F2",
-            border: "1px solid #FECACA",
-            borderRadius: "var(--radius)",
-            color: "var(--color-error)",
-            fontSize: 13,
-            marginBottom: 24,
-            lineHeight: 1.5,
-          }}>
-            {error}
-          </div>
+        {showPicker && (
+          <SessionPicker selectedSessionId={pickedSessionId} onSelect={setPickedSessionId} />
         )}
 
-        {notYetCalculated && !budget && (
-          <div style={{
-            background: "var(--color-surface)",
-            border: "1px solid var(--color-border)",
-            borderRadius: "var(--radius)",
-            padding: "32px",
-            textAlign: "center",
-            boxShadow: "var(--shadow-sm)",
-          }}>
-            <p style={{ color: "var(--color-muted)", fontSize: 14, marginBottom: 20 }}>
-              No uncertainty budget has been calculated for this session yet.
-            </p>
-            <CalculateButton onClick={handleCalculate} calculating={calculating} label="Calculate Uncertainty Budget" />
-          </div>
-        )}
+        <div style={{ opacity: noSessionSelected ? 0.5 : 1, transition: "opacity 0.15s" }}>
 
-        {budget && (
-          <>
+          {loading && <Spinner message="Checking for an existing calculation..." />}
+
+          {error && (
             <div style={{
-              background: "var(--color-surface)",
-              border: "1px solid var(--color-border)",
-              borderRadius: "var(--radius)",
-              padding: "24px",
-              marginBottom: 20,
+              padding: "14px 16px", background: "#FEF2F2", border: "1px solid #FECACA",
+              borderRadius: "var(--radius)", color: "var(--color-error)", fontSize: 13,
+              marginBottom: 24, lineHeight: 1.5,
+            }}>
+              {error}
+            </div>
+          )}
+
+          {!loading && (notYetCalculated || noSessionSelected) && !budget && (
+            <div style={{
+              background: "var(--color-surface)", border: "1px solid var(--color-border)",
+              borderRadius: "var(--radius)", padding: "32px", textAlign: "center",
               boxShadow: "var(--shadow-sm)",
             }}>
-              <h3 style={{ fontSize: 15, fontWeight: 600, color: "var(--color-primary)", marginBottom: 16 }}>
-                Uncertainty Components
-              </h3>
-              <ComponentTable fields={presentComponentFields} budget={budget} />
+              <p style={{ color: "var(--color-muted)", fontSize: 14, marginBottom: 20 }}>
+                {noSessionSelected
+                  ? "Select a session above to check for or run its uncertainty calculation."
+                  : "No uncertainty budget has been calculated for this session yet."}
+              </p>
+              <CalculateButton onClick={handleCalculate} calculating={calculating} disabled={noSessionSelected} label="Calculate Uncertainty Budget" />
             </div>
+          )}
 
-            <div style={{
-              background: "var(--color-surface)",
-              border: "1px solid var(--color-border)",
-              borderRadius: "var(--radius)",
-              padding: "24px",
-              marginBottom: 24,
-              boxShadow: "var(--shadow-sm)",
-            }}>
-              <h3 style={{ fontSize: 15, fontWeight: 600, color: "var(--color-primary)", marginBottom: 16 }}>
-                Summary
-              </h3>
-              <ComponentTable fields={SUMMARY_FIELDS} budget={budget} highlightKey="final_applied_uncertainty" />
-            </div>
+          {!loading && budget && (
+            <>
+              <div style={{
+                background: "var(--color-surface)", border: "1px solid var(--color-border)",
+                borderRadius: "var(--radius)", padding: "24px", marginBottom: 20,
+                boxShadow: "var(--shadow-sm)",
+              }}>
+                <h3 style={{ fontSize: 15, fontWeight: 600, color: "var(--color-primary)", marginBottom: 16 }}>
+                  Uncertainty Components
+                </h3>
+                <ComponentTable fields={presentComponentFields} budget={budget} />
+              </div>
 
-            <div style={{ display: "flex", gap: 12 }}>
-              <CalculateButton onClick={handleCalculate} calculating={calculating} label="Recalculate" secondary />
-              <button
-                onClick={() => navigate(`/results/${sessionId}`)}
-                style={{
-                  padding: "11px 24px",
-                  background: "var(--color-primary)",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "var(--radius)",
-                  fontWeight: 600,
-                  fontSize: 14,
-                  cursor: "pointer",
-                }}
-              >
-                Continue to Results
-              </button>
-            </div>
-          </>
-        )}
+              <div style={{
+                background: "var(--color-surface)", border: "1px solid var(--color-border)",
+                borderRadius: "var(--radius)", padding: "24px", marginBottom: 24,
+                boxShadow: "var(--shadow-sm)",
+              }}>
+                <h3 style={{ fontSize: 15, fontWeight: 600, color: "var(--color-primary)", marginBottom: 16 }}>
+                  Summary
+                </h3>
+                <ComponentTable fields={SUMMARY_FIELDS} budget={budget} highlightKey="final_applied_uncertainty" />
+              </div>
+
+              <div style={{ display: "flex", gap: 12 }}>
+                <CalculateButton onClick={handleCalculate} calculating={calculating} disabled={noSessionSelected} label="Recalculate" secondary />
+                <button
+                  onClick={() => navigate(`/results/${effectiveSessionId}`)}
+                  disabled={noSessionSelected}
+                  style={{
+                    padding: "11px 24px",
+                    background: noSessionSelected ? "var(--color-border)" : "var(--color-primary)",
+                    color: "white", border: "none", borderRadius: "var(--radius)",
+                    fontWeight: 600, fontSize: 14,
+                    cursor: noSessionSelected ? "not-allowed" : "pointer",
+                  }}
+                >
+                  Continue to Results
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -222,9 +234,7 @@ function ComponentTable({ fields, budget, highlightKey }) {
                 {f.label}
               </td>
               <td style={{
-                padding: "10px 4px",
-                textAlign: "right",
-                fontFamily: "var(--font-mono)",
+                padding: "10px 4px", textAlign: "right", fontFamily: "var(--font-mono)",
                 color: isHighlighted ? "var(--color-primary)" : "var(--color-text)",
                 fontWeight: isHighlighted ? 700 : 400,
               }}>
@@ -240,26 +250,22 @@ function ComponentTable({ fields, budget, highlightKey }) {
 
 function formatValue(value) {
   if (typeof value !== "number") return String(value);
-  // 6 significant figures is generous enough for uncertainty values that
-  // range from sub-milligram (weighing) to multi-bar (pressure) without
-  // truncating small values to 0.00.
   return value.toPrecision(6).replace(/\.?0+$/, "").replace(/\.$/, "");
 }
 
-function CalculateButton({ onClick, calculating, label, secondary = false }) {
+function CalculateButton({ onClick, calculating, disabled, label, secondary = false }) {
+  const isDisabled = calculating || disabled;
   return (
     <button
       onClick={onClick}
-      disabled={calculating}
+      disabled={isDisabled}
       style={{
         padding: "11px 24px",
-        background: secondary ? "white" : "var(--color-primary)",
-        color: secondary ? "var(--color-text)" : "white",
+        background: isDisabled ? "var(--color-border)" : (secondary ? "white" : "var(--color-primary)"),
+        color: isDisabled ? "var(--color-muted)" : (secondary ? "var(--color-text)" : "white"),
         border: secondary ? "1px solid var(--color-border)" : "none",
-        borderRadius: "var(--radius)",
-        fontWeight: 600,
-        fontSize: 14,
-        cursor: calculating ? "not-allowed" : "pointer",
+        borderRadius: "var(--radius)", fontWeight: 600, fontSize: 14,
+        cursor: isDisabled ? "not-allowed" : "pointer",
         opacity: calculating ? 0.6 : 1,
       }}
     >
