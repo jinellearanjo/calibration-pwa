@@ -1,10 +1,12 @@
 """calculation_engine.py
 
 Implements the GUM-compliant uncertainty budget calculations for calibration
-sessions. Built out for Pressure and Weighing, since those are the two
-categories with confirmed real formula files (see formulas/pressure.json
-and formulas/weighing.json). Temperature and Electrical functions are not
-yet implemented — those wait on Charkha's Excel files for those categories.
+sessions. Built out for Pressure and Weighing (confirmed real formula files,
+see formulas/pressure.json and formulas/weighing.json), and Temperature
+(see formulas/temperature.json and calculate_type_a_temperature onward -
+Temperature currently supports one setpoint per session only, see
+formula_manager.py's _build_temperature_budget). Electrical functions are
+not yet implemented — waiting on 11 function types' worth of formulas.
 
 Function order and naming follows the original project roadmap:
     calculate_type_a, calculate_u_std, calculate_u_res, calculate_u_hys,
@@ -43,15 +45,25 @@ def root_sum_square(*components: float) -> float:
 
 def calculate_type_a(readings: list[dict]) -> float:
     """Calculate the Type A uncertainty as the standard deviation of the
-    mean error across repeated readings.
+    mean, across repeated mean-error readings.
+
+    GUM-correct: this is the *standard deviation of the mean*
+    (s / sqrt(n)), not the raw sample standard deviation - matches
+    calculate_type_a_temperature's convention. Previously this returned
+    stdev(mean_errors) with no divisor, which overestimates Type A
+    uncertainty by a factor of sqrt(n). Caught via an external code
+    audit and verified against calculate_type_a_temperature (which
+    already divided correctly) before fixing - this changes the actual
+    numeric result of every Pressure uncertainty calculation, not just
+    the code, so any previously-reviewed Pressure certificate numbers
+    will differ (smaller, correctly) after this fix.
 
     Args:
         readings: List of reading dicts, each with a 'mean_error' key.
 
     Returns:
-        float: Sample standard deviation of the mean errors. Returns 0.0
-            if fewer than 2 readings are provided (stdev is undefined
-            for a single point).
+        float: stdev(mean_errors) / sqrt(n). Returns 0.0 if fewer than 2
+            readings are provided (stdev is undefined for a single point).
 
     Raises:
         ValueError: If readings is empty.
@@ -61,7 +73,7 @@ def calculate_type_a(readings: list[dict]) -> float:
     mean_errors = [r["mean_error"] for r in readings]
     if len(mean_errors) < 2:
         return 0.0
-    return statistics.stdev(mean_errors)
+    return statistics.stdev(mean_errors) / math.sqrt(len(mean_errors))
 
 
 def calculate_u_std(master_uncertainty: float, coverage_factor: float = 2.0) -> float:
