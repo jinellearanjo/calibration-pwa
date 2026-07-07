@@ -22,7 +22,7 @@ const TOKEN = {
 const EMPTY_MASTER = {
   name: "", make: "", model: "", serial_number: "", asset_number: "",
   traceability_chain: "", uncertainty_u: "", accuracy: "", resolution: "",
-  cal_due_date: "", claimed_cmc: "", instrument_type: "",
+  cal_due_date: "", claimed_cmc: "", instrument_type: "", master_certificate_number: "",
 }
 
 function validateField(fieldName, value) {
@@ -190,6 +190,7 @@ export default function MasterForm({
             <FloatingLabelField id="model" label="Model" value={formData.model} onChange={(v) => updateField("model", v)} error={errors.model} />
             <FloatingLabelField id="serial_number" label="Serial No." value={formData.serial_number} onChange={(v) => updateField("serial_number", v)} error={errors.serial_number} />
             <FloatingLabelField id="asset_number" label="Asset No." value={formData.asset_number} onChange={(v) => updateField("asset_number", v)} error={errors.asset_number} />
+            <FloatingLabelField id="master_certificate_number" label="Master's Own Certificate No." value={formData.master_certificate_number} onChange={(v) => updateField("master_certificate_number", v)} error={errors.master_certificate_number} />
             <FloatingLabelField id="instrument_type" label="Instrument Type" value={formData.instrument_type} onChange={(v) => updateField("instrument_type", v)} error={errors.instrument_type} />
             <div style={{ gridColumn: "1 / -1" }}>
               <FloatingLabelField id="traceability_chain" label="Traceability / Agency Reference Chain" value={formData.traceability_chain} onChange={(v) => updateField("traceability_chain", v)} error={errors.traceability_chain} />
