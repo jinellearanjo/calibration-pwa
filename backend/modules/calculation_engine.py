@@ -880,3 +880,230 @@ def build_temperature_uncertainty_budget(
         "k_value": 2.0,
         "final_applied_uncertainty": final_applied,
     }
+
+
+# ── Electrical (11 function types: DCV, ACV, DCA, ACA, Resistance, ──────────
+#    Frequency, Insulation Resistance, Temperature R/S/B, Temperature
+#    K/J/N/E/T, DCA (Coil), ACA (Coil) — see formulas/electrical.json.
+#
+#    Built from the real computed uncertainty budget tables in
+#    Eletrical_CMC_-_Lab___Site_-_2023.xls and Clamp_meter_cmc_-_2023.xls,
+#    cross-checked against a real issued certificate
+#    (DMM_Cal_Cert_2020098677R1.xls) — not from Adi's initial formula
+#    summary alone, which turned out to disagree with the real data on
+#    the Type A divisor (see calculate_type_a_electrical below).
+#
+#    Unlike Pressure/Weighing/Temperature, none of the four Type B input
+#    values (cert_uncertainty_limit, calibrator_accuracy_limit,
+#    thermo_electric_limit, coil_accuracy_limit) have a confirmed mapping
+#    to a real database column yet — formula_manager.py dispatch and any
+#    session/instrument wiring is deliberately NOT built yet, pending that
+#    schema decision. These functions are pure and independently testable
+#    without a database, same rigor as everything else in this file.
+
+def calculate_type_a_electrical(readings: list[float], extra_addend: float = 0.0) -> float:
+    """Calculate the Type A uncertainty (Ua) for an Electrical function type.
+
+    IMPORTANT DEVIATION FROM STANDARD GUM: this divides by a flat 2, NOT
+    sqrt(n) as GUM theory (and Adi's original formula document) specify.
+    Confirmed against the real source files' own explicit "Devisor"
+    column — literally showing the value 2 for Ua, not 1.732051 (sqrt(3),
+    which appears for the rectangular Type B components in the same
+    table) — consistently across the DCV, ACV, and DCA (Coil) sheets.
+    Reproduced faithfully as found rather than silently corrected, same
+    as formulas/pressure.json's u_res anomaly. Confirm with Charkha
+    whether this is an intentional lab convention or a spreadsheet error.
+
+    Args:
+        readings: List of repeated UUC reading values (typically 3).
+        extra_addend: DCV-specific quirk only - the real DCV sheet adds
+            thermo_electric_limit directly into the Ua estimate BEFORE
+            dividing by 2, in addition to thermo_electric_limit appearing
+            as its own separate Ub4 rectangular component elsewhere in
+            the same budget (possible double-counting - see
+            formulas/electrical.json's anomalies_found). Leave at the
+            default 0.0 for every function type except DCV.
+
+    Returns:
+        float: (stdev(readings) + extra_addend) / 2. Returns
+            extra_addend / 2 if fewer than 2 readings are provided
+            (stdev undefined for a single point).
+
+    Raises:
+        ValueError: If readings is empty.
+    """
+    if not readings:
+        raise ValueError("Cannot calculate Type A uncertainty from zero readings.")
+    if len(readings) < 2:
+        return extra_addend / 2
+    return (statistics.stdev(readings) + extra_addend) / 2
+
+
+def calculate_u_rectangular_from_limit(value: float) -> float:
+    """Calculate a Type B uncertainty from a value that is ALREADY a
+    rectangular-distribution half-width (i.e. divide only by sqrt(3),
+    with no separate /2 step first).
+
+    Used for Ub2 (Accuracy of Standard Calibrator) on every Electrical
+    function type, Ub4 (Thermo Electric Voltage) on DCV, and Ub3 (Accuracy
+    of Current Coil) on the two Coil function types — all three are the
+    exact same formula in the real source data, just applied to a
+    different named input.
+
+    Args:
+        value: The half-width limit value (e.g. calibrator's accuracy
+            spec, already representing the full ± range).
+
+    Returns:
+        float: value / sqrt(3).
+
+    Raises:
+        ValueError: If value is None.
+    """
+    if value is None:
+        raise ValueError("A limit value is required to calculate this rectangular Type B component.")
+    return value / math.sqrt(3)
+
+
+def calculate_u_resolution_electrical(resolution: float) -> float:
+    """Calculate the UUC resolution uncertainty for Electrical (Ub3 on
+    most function types, Ub4 on the two Coil types).
+
+    Unlike Pressure's calculate_u_res (which is missing this exact
+    divisor - see that function's docstring), this is the full, correct
+    GUM rectangular-distribution treatment: half-width (resolution / 2),
+    then divided by sqrt(3). Confirmed against the real source data,
+    e.g. DCA (Coil)'s own budget table: resolution 0.1 -> (0.1/2)/sqrt(3)
+    = 0.028868, matching the sheet's own computed value exactly.
+
+    Args:
+        resolution: The instrument's resolution.
+
+    Returns:
+        float: (resolution / 2) / sqrt(3).
+
+    Raises:
+        ValueError: If resolution is None or negative.
+    """
+    if resolution is None:
+        raise ValueError("resolution is required to calculate this component.")
+    if resolution < 0:
+        raise ValueError(f"resolution must be non-negative, got {resolution}.")
+    return (resolution / 2) / math.sqrt(3)
+
+
+def build_electrical_uncertainty_budget(
+    function_type: str,
+    readings: list[float],
+    cert_uncertainty_limit: float,
+    calibrator_accuracy_limit: float,
+    resolution: float,
+    thermo_electric_limit: float | None = None,
+    coil_accuracy_limit: float | None = None,
+    cmc: float = 0.0,
+    k_override: float | None = None,
+) -> dict:
+    """Build the full uncertainty budget for one Electrical function type.
+
+    Dispatches on function_type to assemble the right set of Type B
+    components — see formulas/electrical.json's function_types for which
+    shape each of the 11 types uses. All 11 types share the same Type A
+    treatment (calculate_type_a_electrical) and the same combine/expand/
+    final-applied logic; they differ only in which Type B components
+    apply and, for DCV, an extra Type A addend.
+
+    Args:
+        function_type: One of "DCV", "ACV", "DCA", "ACA", "Resistance",
+            "Frequency", "Insulation Resistance", "Temperature (R,S,B)",
+            "Temperature (K,J,N,E,T)", "DCA (Coil)", "ACA (Coil)" — must
+            match formulas/electrical.json's function_types keys exactly.
+        readings: List of repeated UUC reading values.
+        cert_uncertainty_limit: Standard calibrator's own uncertainty (Ub1 input).
+        calibrator_accuracy_limit: Standard calibrator's accuracy (Ub2 input).
+        resolution: The UUC's resolution.
+        thermo_electric_limit: Thermo-electric voltage limit - required
+            for DCV only (used both as calculate_type_a_electrical's
+            extra_addend and as an independent Ub4 component - see that
+            function's docstring for the double-counting concern).
+        coil_accuracy_limit: Current coil's accuracy - required for the
+            two Coil function types only (used as Ub3; resolution becomes
+            Ub4 for these two types instead of Ub3).
+        cmc: Claimed measurement capability. Defaults to 0.0 (not yet
+            wired to a real master_instruments value - see
+            formulas/electrical.json's cmc_source).
+        k_override: Pre-computed coverage factor for "Temperature
+            (K,J,N,E,T)" only. The real source data derives this via the
+            Welch-Satterthwaite equation from each component's own
+            degrees of freedom, which isn't implemented here yet (would
+            need a t-distribution lookup, e.g. via scipy.stats.t.ppf) -
+            pass a known value if you have one from a reference
+            certificate; otherwise this defaults to 2.0, which the real
+            data shows is accurate to within about 0.03% for realistic
+            inputs (observed real k values: 2.0005-2.0007).
+
+    Returns:
+        dict: Uncertainty budget fields (type_a_value, u_b1..u_b4 as
+            applicable, combined_uncertainty, expanded_uncertainty,
+            k_value, final_applied_uncertainty).
+
+    Raises:
+        ValueError: If function_type is unrecognized, or if a
+            function-type-specific required input is missing (e.g.
+            thermo_electric_limit for DCV).
+    """
+    coil_types = {"DCA (Coil)", "ACA (Coil)"}
+    four_component_types = {"DCV"} | coil_types
+    known_types = four_component_types | {
+        "ACV", "DCA", "ACA", "Resistance", "Frequency",
+        "Insulation Resistance", "Temperature (R,S,B)", "Temperature (K,J,N,E,T)",
+    }
+    if function_type not in known_types:
+        raise ValueError(f"Unknown Electrical function_type: '{function_type}'.")
+
+    dcv_addend = 0.0
+    if function_type == "DCV":
+        if thermo_electric_limit is None:
+            raise ValueError("thermo_electric_limit is required for DCV but was not provided.")
+        dcv_addend = thermo_electric_limit
+
+    type_a = calculate_type_a_electrical(readings, extra_addend=dcv_addend)
+    u_b1 = calculate_u_std(cert_uncertainty_limit)
+    u_b2 = calculate_u_rectangular_from_limit(calibrator_accuracy_limit)
+
+    if function_type in coil_types:
+        if coil_accuracy_limit is None:
+            raise ValueError(f"coil_accuracy_limit is required for {function_type} but was not provided.")
+        u_b3 = calculate_u_rectangular_from_limit(coil_accuracy_limit)
+        u_b4 = calculate_u_resolution_electrical(resolution)
+        components = [type_a, u_b1, u_b2, u_b3, u_b4]
+    elif function_type == "DCV":
+        u_b3 = calculate_u_resolution_electrical(resolution)
+        u_b4 = calculate_u_rectangular_from_limit(thermo_electric_limit)
+        components = [type_a, u_b1, u_b2, u_b3, u_b4]
+    else:
+        u_b3 = calculate_u_resolution_electrical(resolution)
+        u_b4 = None
+        components = [type_a, u_b1, u_b2, u_b3]
+
+    combined = calculate_combined_uncertainty(*components)
+
+    if function_type == "Temperature (K,J,N,E,T)":
+        k = k_override if k_override is not None else 2.0
+    else:
+        k = 2.0
+
+    expanded = calculate_expanded_uncertainty(combined, k=k)
+    final_applied = calculate_final_applied_uncertainty(expanded, cmc)
+
+    return {
+        "type_a_value": type_a,
+        "u_b1": u_b1,
+        "u_b2": u_b2,
+        "u_b3": u_b3,
+        "u_b4": u_b4,
+        "cmc": cmc,
+        "combined_uncertainty": combined,
+        "expanded_uncertainty": expanded,
+        "k_value": k,
+        "final_applied_uncertainty": final_applied,
+    }

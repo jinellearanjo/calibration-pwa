@@ -1,0 +1,95 @@
+{
+  "instrument_type": "Electrical",
+  "coverage_factor": 2.0,
+  "source_files": [
+    "Eletrical_CMC_-_Lab___Site_-_2023.xls",
+    "Clamp_meter_cmc_-_2023.xls",
+    "DMM_Cal_Cert_2020098677R1.xls (real issued certificate, used to cross-check the CMC worksheets' formulas against an actual customer-facing result)"
+  ],
+  "notes": "11 function types share the same overall shape (Type A + 3 or 4 Type B components, combined via RSS), extracted by reading the real computed uncertainty budget tables in the source files directly - not just Adi's initial formula summary, which turned out to disagree with the real data on one point (see anomalies_found). Every sheet's own 'Devisor' column was checked explicitly, not inferred from the final numbers alone.",
+  "function_types": {
+    "DCV": {
+      "name": "DC Voltage",
+      "type_b_components": ["u_b1", "u_b2", "u_b3", "u_b4"],
+      "u_b4_source": "thermo_electric_limit",
+      "k": "fixed_2.0",
+      "quirk": "thermo_electric_limit is added into the Type A estimate (see type_a below) AND appears again as its own independent Ub4 rectangular component - see anomalies_found."
+    },
+    "ACV": { "name": "AC Voltage", "type_b_components": ["u_b1", "u_b2", "u_b3"], "k": "fixed_2.0" },
+    "DCA": { "name": "DC Current", "type_b_components": ["u_b1", "u_b2", "u_b3"], "k": "fixed_2.0" },
+    "ACA": { "name": "AC Current", "type_b_components": ["u_b1", "u_b2", "u_b3"], "k": "fixed_2.0" },
+    "Resistance": { "name": "Resistance", "type_b_components": ["u_b1", "u_b2", "u_b3"], "k": "fixed_2.0" },
+    "Frequency": { "name": "Frequency", "type_b_components": ["u_b1", "u_b2", "u_b3"], "k": "fixed_2.0" },
+    "Insulation Resistance": { "name": "Insulation Resistance", "type_b_components": ["u_b1", "u_b2", "u_b3"], "k": "fixed_2.0" },
+    "Temperature (R,S,B)": { "name": "Temperature Simulation (R,S,B)", "type_b_components": ["u_b1", "u_b2", "u_b3"], "k": "fixed_2.0" },
+    "Temperature (K,J,N,E,T)": {
+      "name": "Temperature Simulation (K,J,N,E,T)",
+      "type_b_components": ["u_b1", "u_b2", "u_b3"],
+      "k": "welch_satterthwaite",
+      "notes": "Adi's document described k as a raw input ('degrees_of_freedom_k'), but the real source sheet computes it via the Welch-Satterthwaite equation from the combined uncertainty and each component's own degrees of freedom (Type A: n-1, Type B: infinity) - confirmed by reading the sheet's own 'Effective degree of freedom' (Veff) and 'Coverage Factor' (k) columns directly. Real observed k values are close to but not exactly 2.0 (e.g. 2.000529), consistent with Veff being large but finite."
+    },
+    "DCA (Coil)": {
+      "name": "DC Current (Coil)",
+      "type_b_components": ["u_b1", "u_b2", "u_b3", "u_b4"],
+      "u_b3_source": "coil_accuracy_limit",
+      "u_b4_source": "resolution",
+      "k": "fixed_2.0"
+    },
+    "ACA (Coil)": {
+      "name": "AC Current (Coil)",
+      "type_b_components": ["u_b1", "u_b2", "u_b3", "u_b4"],
+      "u_b3_source": "coil_accuracy_limit",
+      "u_b4_source": "resolution",
+      "k": "fixed_2.0"
+    }
+  },
+  "type_a": {
+    "method": "stdev_over_flat_divisor_2",
+    "description": "Standard deviation of repeated UUC readings, divided by a FLAT 2 - not sqrt(n) as GUM theory and Adi's original document both specify. Confirmed against the real source files' own explicit 'Devisor' column (literally showing the value 2, not 1.732051 which appears for the sqrt(3) rectangular components elsewhere in the same table), consistently across DCV, ACV, and DCA (Coil) sheets. This deviates from standard GUM practice; reproduced faithfully as found rather than silently corrected. Confirm with Charkha whether this is an intentional lab convention or an error in the original spreadsheet - same category of question as u_res's missing sqrt(3) divisor in formulas/pressure.json."
+  },
+  "type_b_sources": [
+    {
+      "name": "u_b1",
+      "description": "Uncertainty of Standard Calibrator",
+      "input_source": "instruments.instrument-specific field, not yet mapped to a real DB column (see anomalies_found)",
+      "distribution": "normal",
+      "coverage_factor": 2.0
+    },
+    {
+      "name": "u_b2",
+      "description": "Accuracy of Standard Calibrator",
+      "distribution": "rectangular",
+      "divisor": "sqrt(3)"
+    },
+    {
+      "name": "u_b3",
+      "description": "Resolution of the UUC (or Accuracy of Current Coil, for the two Coil function types - see function_types)",
+      "distribution": "rectangular",
+      "half_width_formula": "value / 2, then divided by sqrt(3) - the FULL correct GUM rectangular treatment, unlike Pressure's u_res which is missing this same sqrt(3) divisor"
+    },
+    {
+      "name": "u_b4",
+      "description": "Thermo Electric Voltage of cable (DCV only) or Resolution of the UUC (Coil function types only) - see function_types",
+      "distribution": "rectangular",
+      "divisor": "sqrt(3), except the Coil variants' resolution component which is (value/2)/sqrt(3) like u_b3"
+    }
+  ],
+  "combined_uncertainty": {
+    "method": "root_sum_square",
+    "components": "type_a + all applicable u_b components for this function_type (3 or 4)"
+  },
+  "expanded_uncertainty": {
+    "method": "combined_uncertainty * k",
+    "k": "2.0 for all function types except Temperature (K,J,N,E,T), which uses a Welch-Satterthwaite-derived k close to 2.0"
+  },
+  "cmc_source": "Not yet determined - Master_Instrument_Details.xlsx's Electrical sheet has all 4 master instruments (Multifunction Calibrator, Insulation Calibrator, Decade Resistance Box, Digital Multimeter) still marked 'TBA' for uncertainty_u/accuracy/resolution/claimed_cmc, identical to Pressure's blocker.",
+  "final_applied": {
+    "method": "max(expanded_uncertainty, cmc)"
+  },
+  "anomalies_found": [
+    "Type A divisor is a flat 2, not sqrt(n) - see type_a above. Confirmed via the source sheets' own explicit 'Devisor' column across 3 independent sheets (DCV, ACV, DCA (Coil)). Not yet confirmed with Charkha.",
+    "DCV specifically: the Type A ('Ua') estimate is not just stdev(readings) - it's stdev(readings) + thermo_electric_limit added together first, THEN divided by 2. Meanwhile thermo_electric_limit ALSO appears as its own independent Ub4 rectangular component elsewhere in the same budget. This looks like it may double-count the same physical effect (thermal EMF in the test leads) once inside Ua and again as Ub4 - flagged, not resolved, pending Charkha's confirmation on whether this is intentional.",
+    "No real DB column mapping yet exists for any of the Ub1-Ub4 input values (cert_uncertainty_limit, calibrator_accuracy_limit, thermo_electric_limit, coil_accuracy_limit) - unlike Pressure/Weighing/Temperature, which all map cleanly to master_instruments/instruments columns already in the schema. This needs a schema decision before Electrical can be wired into a real session/instrument/master-instrument flow.",
+    "All 4 Electrical master instruments in Master_Instrument_Details.xlsx still show 'TBA' for uncertainty_u, accuracy, resolution, and claimed_cmc - identical blocker to Pressure, confirmed by reading the file directly."
+  ]
+}
