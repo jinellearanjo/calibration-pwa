@@ -84,8 +84,9 @@ def build_uncertainty_budget(session_id: str) -> dict:
             fields (uncertainty_u, accuracy, claimed_cmc — the "TBA" fields
             flagged when the reference workbook came back partially filled),
             or if required test data is incomplete.
-        NotImplementedError: If instrument_type is Temperature or Electrical
-            (formula files not yet available).
+        NotImplementedError: If instrument_type is Electrical (formula file
+            not yet available - Pressure, Weighing, and Temperature are
+            all fully implemented).
         FileNotFoundError: If no formula file exists for this instrument_type.
     """
     session = database.get_session(session_id)

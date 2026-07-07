@@ -162,7 +162,9 @@ export async function getUncertaintyBudget(sessionId) {
 
 /**
  * Calculate and store the uncertainty budget for a session.
- * Implemented for Pressure and Weighing; Temperature/Electrical will
+ * Implemented for Pressure, Weighing, and Temperature (Temperature only
+ * for a session with exactly one setpoint saved - see
+ * TemperatureReadingsForm.jsx's docstring); Electrical will
  * return a 501 until their formula files are available.
  * @param {string} sessionId - UUID of the session.
  * @returns {Promise<Object>} The calculated uncertainty budget record.
