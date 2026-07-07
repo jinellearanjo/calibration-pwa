@@ -55,10 +55,11 @@ def get_session(session_id: str) -> dict:
 def get_readings(session_id: str) -> list:
     """Fetch all readings for a calibration session.
 
-    Applies to Pressure, Temperature, and Electrical sessions. Weighing
-    sessions store their raw data in the weighing_* tables instead — see
-    get_weighing_repeatability_tests, get_weighing_off_center_readings,
-    and get_weighing_hysteresis_readings below.
+    Applies to Pressure and Electrical sessions. Weighing sessions store
+    their raw data in the weighing_* tables instead, and Temperature
+    sessions store theirs in temperature_repeatability_tests/readings -
+    see get_weighing_repeatability_tests, get_weighing_off_center_readings,
+    get_weighing_hysteresis_readings, and get_temperature_repeatability_tests.
 
     Args:
         session_id: The UUID of the calibration session.

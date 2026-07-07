@@ -56,12 +56,16 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.worksheet.page import PageMargins
 
 from database import (
-    get_readings,               # readings table
+    get_readings,               # readings table (Pressure / Electrical)
     get_calibration_reference,  # calibration_reference table
     get_session,                # calibration_sessions table
     get_instrument,             # instruments table
     get_master_instrument,      # master_instruments table
     get_uncertainty_budget,     # uncertainty_budgets table
+    get_weighing_repeatability_tests,   # weighing_repeatability_tests + nested readings
+    get_weighing_off_center_readings,   # weighing_off_center_readings
+    get_weighing_hysteresis_readings,   # weighing_hysteresis_readings
+    get_temperature_repeatability_tests,  # temperature_repeatability_tests + nested readings
     insert_audit_log,           # audit_log table
 )
 
@@ -141,6 +145,12 @@ class ReportData:
         master_resolution: Resolution of the master instrument.
         master_cal_due_date: Next calibration due date of the master instrument.
         master_claimed_cmc: Claimed calibration and measurement capability.
+        master_certificate_number: The master instrument's own calibration
+            certificate number (distinct from certificate_number, which is
+            this app's own certificate for the instrument under test).
+            May be None for master instruments recorded before this field
+            existed - renderers should display it as blank in that case,
+            not fabricate a value.
         readings: Ordered list of per-point measurement dicts.
         type_a_value: Type A uncertainty evaluation result.
         u_std: Standard uncertainty.
@@ -163,14 +173,6 @@ class ReportData:
         expanded_uncertainty: Expanded uncertainty.
         k_value: Coverage factor k.
         final_applied_uncertainty: Final uncertainty value stated on certificate.
-
-    Note on master_certificate_number: the master instrument's OWN
-    calibration certificate number (as would appear in a "Certificate No."
-    column of the Master Instrument Details table) has no corresponding
-    column in master_instruments - this schema gap is not filled in here;
-    renderers should display this field as blank rather than fabricate a
-    value, and it's flagged as a known gap for a future migration if the
-    lab wants to track it.
     """
 
     session_id: str
@@ -190,6 +192,8 @@ class ReportData:
 
     # instruments
     instrument_name: str | None
+    instrument_type: str | None
+    instrument_subtype: str | None
     instrument_make: str | None
     instrument_model: str | None
     instrument_serial_number: str | None
@@ -221,9 +225,18 @@ class ReportData:
     master_resolution: Any
     master_cal_due_date: Any
     master_claimed_cmc: Any
+    master_certificate_number: str | None
 
-    # readings — order preserved from the database call
+    # readings — order preserved from the database call. Only populated for
+    # the category that matches instrument_type; the other two are left as
+    # empty lists. Kept as three separate fields (rather than one polymorphic
+    # blob) so a renderer that reads the wrong one gets an empty table
+    # instead of silently rendering another category's shape.
     readings: list[dict[str, Any]] = field(default_factory=list)
+    weighing_repeatability: list[dict[str, Any]] = field(default_factory=list)
+    weighing_off_center: list[dict[str, Any]] = field(default_factory=list)
+    weighing_hysteresis: list[dict[str, Any]] = field(default_factory=list)
+    temperature_repeatability: list[dict[str, Any]] = field(default_factory=list)
 
     # uncertainty_budgets — spec field names used verbatim
     type_a_value: Any = None
@@ -293,8 +306,26 @@ def gather_report_data(session_id: str) -> ReportData:
     if instrument_record is None:
         raise RuntimeError(f"No instruments record found for instrument_id={instrument_id}.")
 
-    # readings — empty list is valid for a draft session
-    readings_rows: list[dict[str, Any]] = get_readings(session_id) or []
+    # readings — shape depends on instrument_type: Weighing and Temperature
+    # store their raw data in their own dedicated tables rather than the
+    # generic "readings" table. Only the category matching this instrument
+    # is fetched; the other fields stay as empty lists.
+    instrument_type = instrument_record.get("type")
+    readings_rows: list[dict[str, Any]] = []
+    weighing_repeatability_rows: list[dict[str, Any]] = []
+    weighing_off_center_rows: list[dict[str, Any]] = []
+    weighing_hysteresis_rows: list[dict[str, Any]] = []
+    temperature_repeatability_rows: list[dict[str, Any]] = []
+
+    if instrument_type == "Weighing":
+        weighing_repeatability_rows = get_weighing_repeatability_tests(session_id) or []
+        weighing_off_center_rows = get_weighing_off_center_readings(session_id) or []
+        weighing_hysteresis_rows = get_weighing_hysteresis_readings(session_id) or []
+    elif instrument_type == "Temperature":
+        temperature_repeatability_rows = get_temperature_repeatability_tests(session_id) or []
+    else:
+        # Pressure / Electrical - empty list is valid for a draft session
+        readings_rows = get_readings(session_id) or []
 
     # uncertainty_budgets
     uncertainty_record = get_uncertainty_budget(session_id)
@@ -328,6 +359,8 @@ def gather_report_data(session_id: str) -> ReportData:
         technician=session_record.get("technician"),
 
         instrument_name=instrument_record.get("name"),
+        instrument_type=instrument_type,
+        instrument_subtype=instrument_record.get("instrument_subtype"),
         instrument_make=instrument_record.get("make"),
         instrument_model=instrument_record.get("model"),
         instrument_serial_number=instrument_record.get("serial_number"),
@@ -358,8 +391,13 @@ def gather_report_data(session_id: str) -> ReportData:
         master_resolution=master_record.get("resolution"),
         master_cal_due_date=master_record.get("cal_due_date"),
         master_claimed_cmc=master_record.get("claimed_cmc"),
+        master_certificate_number=master_record.get("master_certificate_number"),
 
         readings=readings_rows,
+        weighing_repeatability=weighing_repeatability_rows,
+        weighing_off_center=weighing_off_center_rows,
+        weighing_hysteresis=weighing_hysteresis_rows,
+        temperature_repeatability=temperature_repeatability_rows,
 
         type_a_value=uncertainty_record.get("type_a_value"),
         u_std=uncertainty_record.get("u_std"),
@@ -384,8 +422,118 @@ def gather_report_data(session_id: str) -> ReportData:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# STEP 2 — PDF GENERATION HELPERS
+# STEP 1B — CATEGORY-AWARE READINGS TABLE BUILDER
 # ══════════════════════════════════════════════════════════════════════════════
+
+
+def _build_readings_blocks(report_data: ReportData) -> list[dict[str, Any]]:
+    """Build the Calibration Readings table(s) for whichever category this
+    session belongs to.
+
+    Previously this table was hardcoded to Pressure's ascending/descending
+    shape for every category, so a Weighing or Temperature certificate
+    rendered an empty or wrong-shaped table (a known, documented gap).
+
+    Returns a list of blocks, each a dict with:
+        title: str | None — sub-heading shown above this block's table
+            (Weighing needs three; Pressure/Electrical/Temperature need
+            just one, so title is None and no sub-heading is drawn).
+        header: list[str] — column labels.
+        rows: list[list[str]] — pre-stringified cell values (via _safe_str),
+            ready for either ReportLab's Table or an openpyxl row writer.
+
+    Shared by generate_pdf_report and generate_excel_report so the two
+    renderers read from a single source of truth and can't independently
+    drift out of sync with each other, the way the two duplicated readings
+    tables previously could have.
+    """
+    instrument_type = report_data.instrument_type
+
+    if instrument_type == "Weighing":
+        repeatability_header = ["Test Point", "Nominal Load", "Unit", "Reading #", "Before", "With Load", "After"]
+        repeatability_rows: list[list[str]] = []
+        for test in report_data.weighing_repeatability:
+            nested_readings = sorted(
+                test.get("weighing_repeatability_readings") or [],
+                key=lambda r: r.get("reading_number", 0),
+            )
+            for r in nested_readings:
+                repeatability_rows.append([
+                    _safe_str(test.get("test_point")),
+                    _safe_str(test.get("nominal_load")),
+                    _safe_str(test.get("unit")),
+                    _safe_str(r.get("reading_number")),
+                    _safe_str(r.get("reading_before")),
+                    _safe_str(r.get("reading_with_load")),
+                    _safe_str(r.get("reading_after")),
+                ])
+
+        off_center_header = ["Position", "Nominal Load", "Unit", "Before", "With Load", "After"]
+        off_center_rows = [
+            [
+                _safe_str(r.get("position")),
+                _safe_str(r.get("nominal_load")),
+                _safe_str(r.get("unit")),
+                _safe_str(r.get("reading_before")),
+                _safe_str(r.get("reading_with_load")),
+                _safe_str(r.get("reading_after")),
+            ]
+            for r in report_data.weighing_off_center
+        ]
+
+        hysteresis_header = ["Sequence", "Phase", "Reading Value", "Unit"]
+        hysteresis_rows = [
+            [
+                _safe_str(r.get("sequence_order")),
+                _safe_str(r.get("phase")),
+                _safe_str(r.get("reading_value")),
+                _safe_str(r.get("unit")),
+            ]
+            for r in report_data.weighing_hysteresis
+        ]
+
+        return [
+            {"title": "Repeatability", "header": repeatability_header, "rows": repeatability_rows},
+            {"title": "Off-Center (Eccentricity)", "header": off_center_header, "rows": off_center_rows},
+            {"title": "Hysteresis", "header": hysteresis_header, "rows": hysteresis_rows},
+        ]
+
+    if instrument_type == "Temperature":
+        header = ["Setpoint", "Nominal Temperature", "Unit", "Reading #", "Reading Value"]
+        rows: list[list[str]] = []
+        for test in report_data.temperature_repeatability:
+            nested_readings = sorted(
+                test.get("temperature_repeatability_readings") or [],
+                key=lambda r: r.get("reading_number", 0),
+            )
+            for r in nested_readings:
+                rows.append([
+                    _safe_str(test.get("setpoint_label")),
+                    _safe_str(test.get("nominal_temperature")),
+                    _safe_str(test.get("unit")),
+                    _safe_str(r.get("reading_number")),
+                    _safe_str(r.get("reading_value")),
+                ])
+        return [{"title": None, "header": header, "rows": rows}]
+
+    # Default: Pressure / Electrical - the original ascending/descending
+    # shape, unchanged from before this function existed. The "\n" in the
+    # PDF-facing header is preserved further down where the PDF story is
+    # built, since ReportLab's Table splits plain-string cells on "\n"
+    # into wrapped lines (verified empirically) but openpyxl should not
+    # receive literal embedded newlines in a header cell.
+    header = ["Nominal Value", "Ascending Measured", "Descending Measured", "Mean Error", "Hysteresis"]
+    rows = [
+        [
+            _safe_str(row.get("nominal_value")),
+            _safe_str(row.get("measured_value_up")),      # matches database column
+            _safe_str(row.get("measured_value_down")),    # matches database column
+            _safe_str(row.get("mean_error")),
+            _safe_str(row.get("hysteresis")),
+        ]
+        for row in report_data.readings
+    ]
+    return [{"title": None, "header": header, "rows": rows}]
 
 
 def _format_date(raw_date: Any) -> str:
@@ -825,6 +973,7 @@ def _build_pdf_story(
                 ("Model:", _safe_str(report_data.master_model)),
                 ("Serial Number:", _safe_str(report_data.master_serial_number)),
                 ("Asset Number:", _safe_str(report_data.master_asset_number)),
+                ("Certificate No.:", _safe_str(report_data.master_certificate_number)),
                 ("Traceability Chain:", _safe_str(report_data.master_traceability_chain)),
                 ("Uncertainty (u):", _safe_str(report_data.master_uncertainty_u)),
                 ("Accuracy:", _safe_str(report_data.master_accuracy)),
@@ -841,31 +990,27 @@ def _build_pdf_story(
     spacer()
     heading("Calibration Readings")
 
-    readings_header = [
-        "Nominal Value",
-        "Ascending\nMeasured",
-        "Descending\nMeasured",
-        "Mean Error",
-        "Hysteresis",
-    ]
-    readings_table_data = [readings_header] + [
-        [
-            _safe_str(row.get("nominal_value")),
-            _safe_str(row.get("measured_value_up")),      # matches database column
-            _safe_str(row.get("measured_value_down")),    # matches database column
-            _safe_str(row.get("mean_error")),
-            _safe_str(row.get("hysteresis")),
-        ]
-        for row in report_data.readings
-    ]
-    col_w = usable_width / len(readings_header)
-    readings_table = Table(
-        readings_table_data,
-        colWidths=[col_w] * len(readings_header),
-        repeatRows=1,
-    )
-    readings_table.setStyle(_black_table_style(has_header_row=True))
-    story.append(readings_table)
+    readings_blocks = _build_readings_blocks(report_data)
+    for block in readings_blocks:
+        if block["title"]:
+            story.append(Paragraph(block["title"], styles["body_bold"]))
+            story.append(Spacer(1, 4))
+
+        # Preserve the original Pressure/Electrical header's two-line
+        # wrapping (ReportLab's Table splits plain-string cells on "\n"
+        # into wrapped lines within the same cell - verified empirically).
+        header_row = [h.replace(" Measured", "\nMeasured") for h in block["header"]]
+        block_table_data = [header_row] + block["rows"]
+        col_w = usable_width / len(header_row)
+        block_table = Table(
+            block_table_data,
+            colWidths=[col_w] * len(header_row),
+            repeatRows=1,
+        )
+        block_table.setStyle(_black_table_style(has_header_row=True))
+        story.append(block_table)
+        if block is not readings_blocks[-1]:
+            spacer()
 
     # Uncertainty budget
     spacer()
@@ -1149,6 +1294,7 @@ def generate_excel_report(session_id: str) -> FileResponse:
     worksheet.column_dimensions["D"].width = 20
     worksheet.column_dimensions["E"].width = 20
     worksheet.column_dimensions["F"].width = 20
+    worksheet.column_dimensions["G"].width = 20
 
     # Chars-per-line estimates for the row-height fix, derived from the
     # actual column widths above. Column A holds labels only (rarely
@@ -1245,6 +1391,7 @@ def generate_excel_report(session_id: str) -> FileResponse:
         ("Model", report_data.master_model),
         ("Serial Number", report_data.master_serial_number),
         ("Asset Number", report_data.master_asset_number),
+        ("Certificate No.", report_data.master_certificate_number),
         ("Traceability Chain", report_data.master_traceability_chain),
         ("Uncertainty (u)", report_data.master_uncertainty_u),
         ("Accuracy", report_data.master_accuracy),
@@ -1260,26 +1407,21 @@ def generate_excel_report(session_id: str) -> FileResponse:
     write_section_heading(current_row, "Calibration Readings")
     current_row += 1
 
-    write_table_header(
-        current_row,
-        ["Nominal Value", "Ascending Measured", "Descending Measured", "Mean Error", "Hysteresis"],
-    )
-    current_row += 1
+    readings_blocks = _build_readings_blocks(report_data)
+    for block in readings_blocks:
+        if block["title"]:
+            sub_heading_cell = worksheet.cell(row=current_row, column=1, value=block["title"])
+            sub_heading_cell.font = label_font
+            current_row += 1
 
-    for reading_row in report_data.readings:
-        write_data_row(
-            current_row,
-            [
-                reading_row.get("nominal_value"),
-                reading_row.get("measured_value_up"),      # matches database column
-                reading_row.get("measured_value_down"),    # matches database column
-                reading_row.get("mean_error"),
-                reading_row.get("hysteresis"),
-            ],
-        )
+        write_table_header(current_row, block["header"])
         current_row += 1
 
-    current_row += 1
+        for data_row in block["rows"]:
+            write_data_row(current_row, data_row)
+            current_row += 1
+
+        current_row += 1
 
     write_section_heading(current_row, "Measurement Uncertainty Budget")
     current_row += 1
