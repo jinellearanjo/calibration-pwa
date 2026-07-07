@@ -7,6 +7,7 @@ import InstrumentForm from "./pages/InstrumentForm";
 import SessionForm from "./pages/SessionForm";
 import ReadingsForm from "./pages/ReadingsForm";
 import WeighingReadingsForm from "./pages/WeighingReadingsForm";
+import TemperatureReadingsForm from "./pages/TemperatureReadingsForm";
 import MasterForm from "./pages/MasterForm";
 import CalculationView from "./pages/CalculationView";
 import ResultsView from "./pages/ResultsView";
@@ -26,6 +27,8 @@ function App() {
         <Route path="/readings" element={<ProtectedRoute><ReadingsForm /></ProtectedRoute>} />
         <Route path="/readings/:sessionId" element={<ProtectedRoute><ReadingsForm /></ProtectedRoute>} />
         <Route path="/readings/weighing/:sessionId" element={<ProtectedRoute><WeighingReadingsForm /></ProtectedRoute>} />
+        <Route path="/readings/temperature" element={<ProtectedRoute><TemperatureReadingsForm /></ProtectedRoute>} />
+        <Route path="/readings/temperature/:sessionId" element={<ProtectedRoute><TemperatureReadingsForm /></ProtectedRoute>} />
         <Route path="/calculation" element={<ProtectedRoute><CalculationView /></ProtectedRoute>} />
         <Route path="/calculation/:sessionId" element={<ProtectedRoute><CalculationView /></ProtectedRoute>} />
         <Route path="/results" element={<ProtectedRoute><ResultsView /></ProtectedRoute>} />

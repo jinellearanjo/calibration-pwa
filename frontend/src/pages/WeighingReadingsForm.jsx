@@ -133,6 +133,11 @@ function WeighingReadingsForm() {
       for (const tp of TEST_POINTS) {
         const t = repeatability[tp.key];
         const testPayload = {
+          // session_id is required by WeighingRepeatabilityTestCreate and is
+          // validated by FastAPI before the endpoint's own session_id-from-URL
+          // override ever runs - omitting it here causes a 422, even though
+          // the backend technically re-sets it afterward. Verified empirically.
+          session_id: sessionId,
           test_point: tp.key,
           nominal_load: Number(t.nominal_load),
           unit: t.unit,

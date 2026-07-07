@@ -1,4 +1,4 @@
-const BASE_URL = "http://127.0.0.1:8000";
+const BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://127.0.0.1:8000";
 
 /**
  * Get the auth token from Supabase session for API requests.
@@ -196,9 +196,16 @@ export async function getResults(sessionId) {
  * @returns {Promise<Object>} The created test record with nested readings.
  */
 export async function createWeighingRepeatabilityTest(sessionId, test, readings) {
+  // IMPORTANT: the backend endpoint declares two separate body parameters
+  // (payload: WeighingRepeatabilityTestCreate, readings: list[...]). FastAPI
+  // auto-embeds each under its own key when there's more than one body
+  // parameter, so the wire shape MUST be {"payload": {...}, "readings": [...]}
+  // - a flattened {...test, readings} body fails with a 422 "payload field
+  // required" error. Verified empirically against a live FastAPI TestClient,
+  // not assumed - see the same class of bug in the handover's Section 6.4.
   return request(`/api/sessions/${sessionId}/weighing/repeatability`, {
     method: "POST",
-    body: JSON.stringify({ ...test, readings }),
+    body: JSON.stringify({ payload: test, readings }),
   });
 }
 
@@ -269,9 +276,12 @@ export async function getWeighingHysteresisReadings(sessionId) {
  * @returns {Promise<Object>} The created test record with nested readings.
  */
 export async function createTemperatureRepeatabilityTest(sessionId, test, readings) {
+  // See createWeighingRepeatabilityTest's comment above: this endpoint also
+  // declares two separate body params (payload + readings), so the body
+  // must be embedded as {"payload": {...}, "readings": [...]}, not flattened.
   return request(`/api/sessions/${sessionId}/temperature/repeatability`, {
     method: "POST",
-    body: JSON.stringify({ ...test, readings }),
+    body: JSON.stringify({ payload: test, readings }),
   });
 }
 

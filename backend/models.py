@@ -113,6 +113,10 @@ class MasterInstrumentCreate(BaseModel):
         cal_due_date: Next calibration due date.
         claimed_cmc: Claimed measurement capability of the laboratory.
         instrument_type: Category of instrument (Pressure, Temperature, etc).
+        master_certificate_number: The master instrument's own calibration
+            certificate number, as issued by whichever lab calibrated it.
+            Optional since older/legacy master instruments may not have
+            this recorded.
     """
     name: str
     make: str
@@ -126,6 +130,7 @@ class MasterInstrumentCreate(BaseModel):
     cal_due_date: date
     claimed_cmc: float
     instrument_type: str
+    master_certificate_number: Optional[str] = None
 
 
 class CalibrationReferenceCreate(BaseModel):
@@ -235,7 +240,7 @@ class WeighingRepeatabilityReadingCreate(BaseModel):
         reading_with_load: Reading with the nominal load applied.
         reading_after: Zero/tare reading after load is removed.
     """
-    test_id: UUID
+    test_id: Optional[UUID] = None
     reading_number: int
     reading_before: float
     reading_with_load: float
@@ -358,6 +363,6 @@ class TemperatureRepeatabilityReadingCreate(BaseModel):
         reading_number: Which of the 3 readings this is (1-3).
         reading_value: The recorded temperature reading.
     """
-    test_id: UUID
+    test_id: Optional[UUID] = None
     reading_number: int
     reading_value: float

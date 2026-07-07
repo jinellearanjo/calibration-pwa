@@ -56,6 +56,11 @@ function InstrumentForm() {
     if (requiredRef.includes(field) || requiredUuc.includes(field)) {
       if (!value || !value.toString().trim()) return "This field is required.";
     }
+    // instrument_subtype is only required when type is Temperature - it isn't
+    // in requiredUuc because it's conditionally rendered, so it needs its own check.
+    if (field === "instrument_subtype" && uucData.type === "Temperature") {
+      if (!value || !value.toString().trim()) return "Required for Temperature instruments.";
+    }
     if (numericFields.includes(field) && value !== "" && isNaN(Number(value))) {
       return "Must be a number.";
     }
@@ -77,12 +82,13 @@ function InstrumentForm() {
   const hasErrors = Object.values(errors).some(Boolean);
   const allFilled = [...requiredRef, ...requiredUuc].every(f =>
     (refData[f] || uucData[f] || "").toString().trim() !== ""
-  );
+  ) && (uucData.type !== "Temperature" || (uucData.instrument_subtype || "").toString().trim() !== "");
 
   async function handleSubmit() {
     const freshErrors = {};
     requiredRef.forEach(f => { freshErrors[f] = validate(f, refData[f]); });
     requiredUuc.forEach(f => { freshErrors[f] = validate(f, uucData[f]); });
+    freshErrors.instrument_subtype = validate("instrument_subtype", uucData.instrument_subtype);
     setErrors(freshErrors);
     if (Object.values(freshErrors).some(Boolean)) return;
 
