@@ -131,7 +131,7 @@ def list_sessions(user_id: str = Depends(get_current_user_id)):
         list: All session records for the user.
     """
     response = database.supabase.table("calibration_sessions").select(
-        "*, instruments(name)"
+        "*, instruments(name, type)"
     ).eq("user_id", user_id).order("created_at", desc=True).execute()
     return response.data
 

@@ -2,7 +2,9 @@ import { useNavigate } from "react-router-dom";
 
 /**
  * NotFound component.
- * Displayed when a user navigates to an unknown route.
+ * Displayed when a user navigates to an unknown route. Uses the same
+ * bordered-card pattern as the app's other empty-state screens (e.g.
+ * History.jsx's "no sessions found" card) for visual consistency.
  */
 function NotFound() {
   const navigate = useNavigate();
@@ -15,8 +17,18 @@ function NotFound() {
       alignItems: "center",
       justifyContent: "center",
       fontFamily: "var(--font-body)",
+      padding: 32,
     }}>
-      <div style={{ textAlign: "center" }}>
+      <div style={{
+        background: "var(--color-surface)",
+        border: "1px solid var(--color-border)",
+        borderRadius: "var(--radius)",
+        boxShadow: "var(--shadow-sm)",
+        padding: "48px 40px",
+        textAlign: "center",
+        maxWidth: 440,
+        width: "100%",
+      }}>
         <p style={{
           fontFamily: "var(--font-mono)",
           fontSize: 11,
@@ -29,7 +41,7 @@ function NotFound() {
           404
         </p>
         <h1 style={{
-          fontSize: 28,
+          fontSize: 26,
           fontWeight: 700,
           color: "var(--color-primary)",
           marginBottom: 12,
