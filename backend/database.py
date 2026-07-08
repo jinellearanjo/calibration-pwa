@@ -74,19 +74,27 @@ def get_readings(session_id: str) -> list:
     return response.data
 
 
-def get_uncertainty_budget(session_id: str) -> dict:
-    """Fetch the uncertainty budget for a calibration session.
+def get_uncertainty_budgets(session_id: str) -> list:
+    """Fetch ALL uncertainty budget rows for a calibration session.
+
+    Renamed from the old get_uncertainty_budget (singular): Pressure and
+    Weighing sessions still only ever have one budget row, but Temperature
+    (one per setpoint) and Electrical (one per function-type/range) can
+    have several. Previously used .single(), which would raise if more
+    than one row matched - now returns a plain list, empty if none exist
+    yet, so callers can handle "0 budgets" and "many budgets" the same way.
 
     Args:
         session_id: The UUID of the calibration session.
 
     Returns:
-        dict: The uncertainty budget record.
+        list: All uncertainty budget records for this session, in
+            insertion order. Empty list if none exist yet.
 
     Raises:
         Exception: If the database query fails.
     """
-    response = supabase.table("uncertainty_budgets").select("*").eq("session_id", session_id).single().execute()
+    response = supabase.table("uncertainty_budgets").select("*").eq("session_id", session_id).execute()
     return response.data
 
 
@@ -415,6 +423,63 @@ def get_temperature_repeatability_tests(session_id: str) -> list:
     response = (
         supabase.table("temperature_repeatability_tests")
         .select("*, temperature_repeatability_readings(*)")
+        .eq("session_id", session_id)
+        .execute()
+    )
+    return response.data
+
+
+def insert_electrical_test(test: dict) -> list:
+    """Insert a new Electrical test record (one function-type/range).
+
+    Args:
+        test: A dictionary of electrical_tests fields and values.
+
+    Returns:
+        list: The inserted test record (Supabase's insert response,
+            same shape as insert_temperature_repeatability_test).
+
+    Raises:
+        Exception: If the database query fails.
+    """
+    response = supabase.table("electrical_tests").insert(test).execute()
+    return response.data
+
+
+def insert_electrical_readings(readings: list) -> list:
+    """Insert multiple Electrical readings for a single test.
+
+    Args:
+        readings: A list of dictionaries, each matching the
+            electrical_readings table shape (test_id, reading_number,
+            reading_value).
+
+    Returns:
+        list: The inserted reading records.
+
+    Raises:
+        Exception: If the database query fails.
+    """
+    response = supabase.table("electrical_readings").insert(readings).execute()
+    return response.data
+
+
+def get_electrical_tests(session_id: str) -> list:
+    """Fetch all Electrical test records (and their readings) for a session.
+
+    Args:
+        session_id: The UUID of the calibration session.
+
+    Returns:
+        list: Test records, each with a nested list of its readings via
+            the electrical_readings foreign key relationship.
+
+    Raises:
+        Exception: If the database query fails.
+    """
+    response = (
+        supabase.table("electrical_tests")
+        .select("*, electrical_readings(*)")
         .eq("session_id", session_id)
         .execute()
     )

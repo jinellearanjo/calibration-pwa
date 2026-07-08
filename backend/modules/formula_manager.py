@@ -5,10 +5,14 @@ orchestrates building an uncertainty budget for a session by gathering the
 right data from the database and dispatching to the correct
 calculation_engine functions for that instrument_type.
 
-Pressure and Weighing have real formula files and are fully wired.
-Temperature and Electrical raise NotImplementedError until their Excel
-files arrive from the supervisor and formulas/temperature.json /
-formulas/electrical.json are written.
+build_uncertainty_budget ALWAYS returns a LIST of budget dicts, even for
+Pressure and Weighing (which will always have exactly one item). This is
+a deliberate consistency choice: Temperature (one budget per setpoint) and
+Electrical (one budget per function-type/range) both genuinely need
+multiple budgets per session, and rather than have some categories return
+a dict and others a list, every category returns a list. Callers (main.py,
+validation.py, reporting.py) handle "a list of 1" and "a list of N" the
+same way.
 
 Deliberately NOT a single generic parser: Pressure's formula shape (flat
 type_b_sources list) and Weighing's (procedural, multi-test) are different
@@ -63,20 +67,25 @@ def parse_excel_formula_file(instrument_type: str) -> dict:
         raise ValueError(f"Invalid JSON in {file_path}: {e}")
 
 
-def build_uncertainty_budget(session_id: str) -> dict:
-    """Build the full uncertainty budget for a calibration session.
+def build_uncertainty_budget(session_id: str) -> list[dict]:
+    """Build the full uncertainty budget(s) for a calibration session.
 
     Gathers the instrument, session, master instrument, and readings data
     needed, then dispatches to the correct calculation_engine functions
     based on the instrument's type.
 
+    ALWAYS returns a list, even for Pressure/Weighing which will always
+    have exactly one item — see this module's docstring for why.
+
     Args:
         session_id: UUID of the calibration session to calculate for.
 
     Returns:
-        dict: The uncertainty budget fields, matching UncertaintyBudgetCreate,
-            with session_id included — ready to pass directly to
-            database.insert_uncertainty_budget.
+        list[dict]: One or more uncertainty budget dicts, each matching
+            UncertaintyBudgetCreate, with session_id (and, for Temperature/
+            Electrical, temperature_test_id/electrical_test_id) included —
+            ready to pass directly to database.insert_uncertainty_budget,
+            one at a time.
 
     Raises:
         ValueError: If the session, instrument, or master instrument can't
@@ -84,9 +93,7 @@ def build_uncertainty_budget(session_id: str) -> dict:
             fields (uncertainty_u, accuracy, claimed_cmc — the "TBA" fields
             flagged when the reference workbook came back partially filled),
             or if required test data is incomplete.
-        NotImplementedError: If instrument_type is Electrical (formula file
-            not yet available - Pressure, Weighing, and Temperature are
-            all fully implemented).
+        NotImplementedError: If instrument_type is unrecognized.
         FileNotFoundError: If no formula file exists for this instrument_type.
     """
     session = database.get_session(session_id)
@@ -112,18 +119,22 @@ def build_uncertainty_budget(session_id: str) -> dict:
         raise ValueError(f"Master instrument {master_instrument_id} not found.")
 
     if instrument_type == "Pressure":
-        return _build_pressure_budget(session_id, instrument, master)
+        # Unchanged internally - wrapped in a list for contract consistency.
+        # temperature_test_id/electrical_test_id are irrelevant to this
+        # category, so both stay None.
+        budget = _build_pressure_budget(session_id, instrument, master)
+        budget["temperature_test_id"] = None
+        budget["electrical_test_id"] = None
+        return [budget]
     elif instrument_type == "Weighing":
-        return _build_weighing_budget(session_id, instrument, master)
+        budget = _build_weighing_budget(session_id, instrument, master)
+        budget["temperature_test_id"] = None
+        budget["electrical_test_id"] = None
+        return [budget]
     elif instrument_type == "Temperature":
-        return _build_temperature_budget(session_id, instrument, master)
+        return _build_temperature_budgets(session_id, instrument, master)
     elif instrument_type == "Electrical":
-        raise NotImplementedError(
-            f"Calculation engine for instrument_type='Electrical' is not yet "
-            f"implemented — this category has 11 separate function types "
-            f"(DCV/ACV/DCA/ACA/Resistance/Frequency/etc), each needing its own "
-            f"formula definition. See formulas/electrical.json (does not exist yet)."
-        )
+        return _build_electrical_budgets(session_id, instrument, master)
     else:
         raise ValueError(f"Unknown instrument_type: '{instrument_type}'.")
 
@@ -252,17 +263,15 @@ def _build_weighing_budget(session_id: str, instrument: dict, master: dict) -> d
     return budget
 
 
-def _build_temperature_budget(session_id: str, instrument: dict, master: dict) -> dict:
-    """Build the uncertainty budget for a Temperature session.
+def _build_temperature_budgets(session_id: str, instrument: dict, master: dict) -> list[dict]:
+    """Build one uncertainty budget per Temperature setpoint tested.
 
     Requires instruments.instrument_subtype to be one of 'TCK', 'RTD',
     'DTI', 'DryBlock' — dispatches which components apply (TCK alone needs
-    wire_homogeneity_value). Uses whichever repeatability test was most
-    recently created for this session if multiple setpoints exist; a
-    session covering multiple setpoints would need one budget calculated
-    per setpoint, which the current single-budget-per-session
-    uncertainty_budgets table doesn't yet support — flagged here rather
-    than silently picking one arbitrarily.
+    wire_homogeneity_value). Previously this rejected any session with
+    more than one setpoint tested (uncertainty_budgets only supported one
+    row per session_id) — now that uncertainty_budgets.temperature_test_id
+    exists, every setpoint gets its own budget row instead.
 
     Args:
         session_id: UUID of the calibration session.
@@ -270,14 +279,16 @@ def _build_temperature_budget(session_id: str, instrument: dict, master: dict) -
         master: The master instrument record.
 
     Returns:
-        dict: Uncertainty budget fields with session_id included.
+        list[dict]: One uncertainty budget dict per setpoint tested, each
+            tagged with temperature_test_id identifying which setpoint it's
+            for. electrical_test_id is None on every item.
 
     Raises:
         ValueError: If instrument_subtype is not set or not recognized, if
-            no repeatability test data exists for this session, if more
-            than one setpoint was tested in this session (not yet
-            supported — see note above), or if any required field
-            (including the master's uncertainty_u/accuracy) is missing.
+            no repeatability test data exists for this session, or if any
+            required field (including the master's uncertainty_u/accuracy,
+            or any individual setpoint's readings/wire_homogeneity_value)
+            is missing.
     """
     instrument_subtype = instrument.get("instrument_subtype")
     if not instrument_subtype:
@@ -293,50 +304,121 @@ def _build_temperature_budget(session_id: str, instrument: dict, master: dict) -
             f"No repeatability test data found for session {session_id}. "
             f"Enter temperature test readings before calculating the uncertainty budget."
         )
-    if len(repeatability_tests) > 1:
-        raise ValueError(
-            f"Session {session_id} has {len(repeatability_tests)} temperature "
-            f"setpoints tested, but calculating a budget for more than one "
-            f"setpoint per session is not yet supported — each setpoint needs "
-            f"its own uncertainty budget, and uncertainty_budgets currently "
-            f"only supports one row per session_id."
-        )
-
-    test = repeatability_tests[0]
-    readings_key = "temperature_repeatability_readings"
-    reading_values = [r["reading_value"] for r in test.get(readings_key, [])]
-    if len(reading_values) != 3:
-        raise ValueError(
-            f"Repeatability test for setpoint '{test.get('setpoint_label')}' has "
-            f"{len(reading_values)} of 3 required readings."
-        )
 
     _require_master_field(master, "uncertainty_u")
     _require_master_field(master, "accuracy")
     _require_master_field(master, "claimed_cmc")
 
-    if instrument_subtype == "TCK" and test.get("wire_homogeneity_value") is None:
+    budgets = []
+    for test in repeatability_tests:
+        readings_key = "temperature_repeatability_readings"
+        reading_values = [r["reading_value"] for r in test.get(readings_key, [])]
+        if len(reading_values) != 3:
+            raise ValueError(
+                f"Repeatability test for setpoint '{test.get('setpoint_label')}' has "
+                f"{len(reading_values)} of 3 required readings."
+            )
+
+        if instrument_subtype == "TCK" and test.get("wire_homogeneity_value") is None:
+            raise ValueError(
+                f"wire_homogeneity_value is required for TCK (thermocouple) instruments "
+                f"but is not set on the repeatability test for setpoint "
+                f"'{test.get('setpoint_label')}'."
+            )
+
+        budget = ce.build_temperature_uncertainty_budget(
+            instrument_subtype=instrument_subtype,
+            repeated_readings=reading_values,
+            master_uncertainty=master["uncertainty_u"],
+            master_accuracy=master["accuracy"],
+            drift_standard_uncertainty=test.get("drift_standard_uncertainty"),
+            resolution=instrument["resolution"],
+            hysteresis_value=test.get("hysteresis_value"),
+            bath_stability_value=test.get("bath_stability_value"),
+            bath_uniformity_value=test.get("bath_uniformity_value"),
+            cmc=master["claimed_cmc"],
+            wire_homogeneity_value=test.get("wire_homogeneity_value"),
+        )
+        budget["session_id"] = session_id
+        budget["temperature_test_id"] = test["id"]
+        budget["electrical_test_id"] = None
+        budgets.append(budget)
+
+    return budgets
+
+
+def _build_electrical_budgets(session_id: str, instrument: dict, master: dict) -> list[dict]:
+    """Build one uncertainty budget per Electrical function-type/range tested.
+
+    A single Electrical instrument (e.g. one multifunction calibrator) is
+    typically tested across several function types (DCV, ACV, DCA, ...)
+    and several ranges within each, all in one calibration session — see
+    Eletrical_CMC_-_Lab___Site_-_2023.xls's 11 sheets, all for the same
+    physical instrument. function_type and range_label live on each
+    electrical_tests row rather than on the instrument itself, since one
+    instrument covers many of both within a single session.
+
+    Args:
+        session_id: UUID of the calibration session.
+        instrument: The UUC instrument record.
+        master: The master instrument record.
+
+    Returns:
+        list[dict]: One uncertainty budget dict per function-type/range
+            tested, each tagged with electrical_test_id identifying which
+            one it's for. temperature_test_id is None on every item.
+
+    Raises:
+        ValueError: If no Electrical test data exists for this session, if
+            any individual test's readings are missing, or if any test's
+            function_type isn't one of the 11 recognized types (see
+            calculation_engine.build_electrical_uncertainty_budget).
+
+    Note:
+        cmc defaults to 0.0 for every test — Master_Instrument_Details.xlsx
+        confirms all 4 real Electrical master instruments still have
+        claimed_cmc marked "TBA" (same blocker as Pressure), so there is
+        no real value to require yet. Revisit _require_master_field for
+        claimed_cmc once real numbers exist, matching Pressure/Temperature's
+        pattern.
+    """
+    electrical_tests = database.get_electrical_tests(session_id)
+    if not electrical_tests:
         raise ValueError(
-            f"wire_homogeneity_value is required for TCK (thermocouple) instruments "
-            f"but is not set on the repeatability test for setpoint "
-            f"'{test.get('setpoint_label')}'."
+            f"No Electrical test data found for session {session_id}. "
+            f"Enter Electrical test readings before calculating the uncertainty budget."
         )
 
-    budget = ce.build_temperature_uncertainty_budget(
-        instrument_subtype=instrument_subtype,
-        repeated_readings=reading_values,
-        master_uncertainty=master["uncertainty_u"],
-        master_accuracy=master["accuracy"],
-        drift_standard_uncertainty=test.get("drift_standard_uncertainty"),
-        resolution=instrument["resolution"],
-        hysteresis_value=test.get("hysteresis_value"),
-        bath_stability_value=test.get("bath_stability_value"),
-        bath_uniformity_value=test.get("bath_uniformity_value"),
-        cmc=master["claimed_cmc"],
-        wire_homogeneity_value=test.get("wire_homogeneity_value"),
-    )
-    budget["session_id"] = session_id
-    return budget
+    budgets = []
+    for test in electrical_tests:
+        readings_key = "electrical_readings"
+        reading_values = [r["reading_value"] for r in test.get(readings_key, [])]
+        if not reading_values:
+            raise ValueError(
+                f"No readings found for Electrical test '{test.get('function_type')}' "
+                f"range '{test.get('range_label')}'."
+            )
+
+        budget = ce.build_electrical_uncertainty_budget(
+            function_type=test["function_type"],
+            readings=reading_values,
+            cert_uncertainty_limit=test.get("cert_uncertainty_limit"),
+            calibrator_accuracy_limit=test.get("calibrator_accuracy_limit"),
+            resolution=test.get("resolution"),
+            thermo_electric_limit=test.get("thermo_electric_limit"),
+            coil_accuracy_limit=test.get("coil_accuracy_limit"),
+            cmc=master.get("claimed_cmc") or 0.0,
+        )
+        budget["session_id"] = session_id
+        budget["temperature_test_id"] = None
+        budget["electrical_test_id"] = test["id"]
+        # type_a_value maps to Electrical's u_b1-u_b4 field names, not
+        # Pressure/Weighing/Temperature's u_std/u_res/etc - the budget
+        # dict from build_electrical_uncertainty_budget already uses the
+        # right keys (u_b1..u_b4) directly, matching UncertaintyBudgetCreate.
+        budgets.append(budget)
+
+    return budgets
 
 
 def _require_master_field(master: dict, field_name: str):

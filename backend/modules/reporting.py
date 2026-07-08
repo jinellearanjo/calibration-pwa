@@ -61,7 +61,7 @@ from database import (
     get_session,                # calibration_sessions table
     get_instrument,             # instruments table
     get_master_instrument,      # master_instruments table
-    get_uncertainty_budget,     # uncertainty_budgets table
+    get_uncertainty_budgets,     # uncertainty_budgets table
     get_weighing_repeatability_tests,   # weighing_repeatability_tests + nested readings
     get_weighing_off_center_readings,   # weighing_off_center_readings
     get_weighing_hysteresis_readings,   # weighing_hysteresis_readings
@@ -327,10 +327,26 @@ def gather_report_data(session_id: str) -> ReportData:
         # Pressure / Electrical - empty list is valid for a draft session
         readings_rows = get_readings(session_id) or []
 
-    # uncertainty_budgets
-    uncertainty_record = get_uncertainty_budget(session_id)
-    if uncertainty_record is None:
+    # uncertainty_budgets - now a LIST (formula_manager always returns a
+    # list; Temperature/Electrical can have more than one). Certificates
+    # showing a proper per-setpoint/range uncertainty breakdown for
+    # multi-budget sessions is a known follow-up piece of work, same
+    # category as the Calibration Readings table redesign - NOT silently
+    # picking one budget or rendering something misleading in the
+    # meantime, failing loudly and clearly instead.
+    uncertainty_records = get_uncertainty_budgets(session_id) or []
+    if not uncertainty_records:
         raise RuntimeError(f"No uncertainty_budgets record found for session_id={session_id}.")
+    if len(uncertainty_records) > 1:
+        raise RuntimeError(
+            f"Session {session_id} has {len(uncertainty_records)} uncertainty budgets "
+            f"(one per Temperature setpoint or Electrical function-type/range). "
+            f"Certificate generation for multi-budget sessions isn't built yet - "
+            f"only single-budget sessions (Pressure, Weighing, or a Temperature/"
+            f"Electrical session with exactly one setpoint/range) can generate "
+            f"a certificate right now."
+        )
+    uncertainty_record = uncertainty_records[0]
 
     # master_instruments — linked via calibration_sessions.master_instrument_id
     master_instrument_id = session_record.get("master_instrument_id")

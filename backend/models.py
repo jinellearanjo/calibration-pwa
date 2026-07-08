@@ -177,6 +177,23 @@ class UncertaintyBudgetCreate(BaseModel):
         expanded_uncertainty: Combined uncertainty multiplied by coverage factor.
         k_value: Coverage factor.
         final_applied_uncertainty: Larger of expanded uncertainty and CMC.
+        temperature_test_id: UUID of the specific temperature_repeatability_test
+            this budget is for. Temperature sessions only - one budget row
+            per setpoint, not one per session. None for every other category.
+        electrical_test_id: UUID of the specific electrical_test this budget
+            is for. Electrical sessions only - one budget row per function-
+            type/range tested, not one per session. None for every other category.
+        u_b1: Electrical Type B component 1 (Uncertainty of Standard
+            Calibrator). Electrical sessions only.
+        u_b2: Electrical Type B component 2 (Accuracy of Standard
+            Calibrator). Electrical sessions only.
+        u_b3: Electrical Type B component 3 (UUC Resolution, or Accuracy
+            of Current Coil for the two Coil function types). Electrical
+            sessions only.
+        u_b4: Electrical Type B component 4 (Thermo-Electric Voltage for
+            DCV, or UUC Resolution for the two Coil function types).
+            Electrical sessions only; None for the 8 function types that
+            only have 3 Type B components.
     """
     session_id: UUID
     type_a_value: float
@@ -199,6 +216,12 @@ class UncertaintyBudgetCreate(BaseModel):
     expanded_uncertainty: float
     k_value: float
     final_applied_uncertainty: float
+    temperature_test_id: Optional[UUID] = None
+    electrical_test_id: Optional[UUID] = None
+    u_b1: Optional[float] = None
+    u_b2: Optional[float] = None
+    u_b3: Optional[float] = None
+    u_b4: Optional[float] = None
 
 
 # ── Weighing test models ────────────────────────────────────────────────────
@@ -362,6 +385,59 @@ class TemperatureRepeatabilityReadingCreate(BaseModel):
         test_id: UUID of the parent TemperatureRepeatabilityTest.
         reading_number: Which of the 3 readings this is (1-3).
         reading_value: The recorded temperature reading.
+    """
+    test_id: Optional[UUID] = None
+    reading_number: int
+    reading_value: float
+
+
+# ── Electrical test models ───────────────────────────────────────────────────
+# One row per function-type-and-range tested (e.g. a single DMM session
+# might test DCV at 6 different ranges), same pattern as Temperature's
+# one-row-per-setpoint. See formulas/electrical.json for the 11 valid
+# function_type values and which of thermo_electric_limit/
+# coil_accuracy_limit apply to which.
+
+class ElectricalTestCreate(BaseModel):
+    """Pydantic model for creating an Electrical test (one function-type/range).
+
+    Attributes:
+        session_id: UUID of the associated calibration session.
+        function_type: One of the 11 function types (e.g. 'DCV', 'ACV',
+            'DCA (Coil)') - must match formulas/electrical.json's
+            function_types keys exactly.
+        range_label: Human-readable range identifier (e.g. '20mV', '50A').
+        nominal_value: The numeric nominal test point within this range.
+        unit: Unit of measurement (e.g. 'mV', 'A', 'Ohm').
+        cert_uncertainty_limit: Ub1 input - Uncertainty of Standard Calibrator.
+        calibrator_accuracy_limit: Ub2 input - Accuracy of Standard Calibrator.
+        resolution: Ub3 (or Ub4 for Coil types) input - UUC resolution.
+        thermo_electric_limit: DCV only - required for DCV, None otherwise.
+        coil_accuracy_limit: DCA (Coil) / ACA (Coil) only - required for
+            those two, None otherwise.
+    """
+    session_id: UUID
+    function_type: str
+    range_label: str
+    nominal_value: Optional[float] = None
+    unit: str
+    cert_uncertainty_limit: Optional[float] = None
+    calibrator_accuracy_limit: Optional[float] = None
+    resolution: Optional[float] = None
+    thermo_electric_limit: Optional[float] = None
+    coil_accuracy_limit: Optional[float] = None
+
+
+class ElectricalReadingCreate(BaseModel):
+    """Pydantic model for creating a single Electrical repeated reading.
+
+    Attributes:
+        test_id: UUID of the parent ElectricalTest. Optional since it
+            can't be known client-side before the parent test row is
+            inserted - same reasoning as WeighingRepeatabilityReadingCreate
+            and TemperatureRepeatabilityReadingCreate's test_id fields.
+        reading_number: Which repeated reading this is (1-indexed).
+        reading_value: The recorded UUC reading.
     """
     test_id: Optional[UUID] = None
     reading_number: int

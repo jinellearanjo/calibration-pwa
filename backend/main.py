@@ -17,6 +17,8 @@ from models import (
     WeighingHysteresisReadingCreate,
     TemperatureRepeatabilityTestCreate,
     TemperatureRepeatabilityReadingCreate,
+    ElectricalTestCreate,
+    ElectricalReadingCreate,
 )
 import database
 from modules import validation, reporting, formula_manager
@@ -329,26 +331,27 @@ def create_uncertainty_budget(
 
 
 @app.get("/api/sessions/{session_id}/budget")
-def get_uncertainty_budget(
+def get_uncertainty_budgets(
     session_id: UUID,
     user_id: str = Depends(get_current_user_id),
 ):
-    """Fetch the uncertainty budget for a session.
+    """Fetch ALL uncertainty budget rows for a session.
+
+    Renamed from the old singular get_uncertainty_budget: Pressure and
+    Weighing sessions still only ever have one budget, but Temperature
+    (one per setpoint) and Electrical (one per function-type/range) can
+    have several — always returns a list now, even when it's a list of one.
 
     Args:
         session_id: UUID of the calibration session.
         user_id: UUID of the authenticated user from JWT.
 
     Returns:
-        dict: The uncertainty budget record.
-
-    Raises:
-        HTTPException: 404 if no budget exists for this session.
+        list[dict]: All uncertainty budget records for this session.
+            Empty list (not a 404) if none have been calculated yet -
+            "no budget calculated" is a normal state, not an error.
     """
-    record = database.get_uncertainty_budget(str(session_id))
-    if not record:
-        raise HTTPException(status_code=404, detail="Uncertainty budget not found.")
-    return record
+    return database.get_uncertainty_budgets(str(session_id))
 
 
 @app.post("/api/sessions/{session_id}/calculate")
@@ -356,35 +359,43 @@ def calculate_uncertainty_budget(
     session_id: UUID,
     user_id: str = Depends(get_current_user_id),
 ):
-    """Calculate and store the uncertainty budget for a session.
+    """Calculate and store the uncertainty budget(s) for a session.
 
     Dispatches to the correct calculation logic based on the session's
-    instrument type (see formula_manager.build_uncertainty_budget).
-    Currently implemented for Pressure and Weighing; Temperature and
-    Electrical are not yet available pending the supervisor's Excel files.
+    instrument type (see formula_manager.build_uncertainty_budget, which
+    always returns a list — one item for Pressure/Weighing, one item per
+    setpoint for Temperature, one item per function-type/range for
+    Electrical). Every returned budget is inserted; if any single insert
+    fails partway through, the ones already inserted are NOT rolled back
+    (Supabase doesn't give this endpoint a multi-row transaction) - the
+    session can simply be recalculated, since calculation is idempotent
+    per setpoint/range and doesn't depend on order.
 
     Args:
         session_id: UUID of the calibration session to calculate for.
         user_id: UUID of the authenticated user from JWT.
 
     Returns:
-        dict: The calculated and stored uncertainty budget record.
+        list[dict]: The calculated and stored uncertainty budget records,
+            one per setpoint/range (or a list of one for Pressure/Weighing).
 
     Raises:
         HTTPException: 400 if the session, instrument, or master instrument
-            can't be found, if required data (readings, master instrument
-            numeric fields, weighing test data) is missing or incomplete.
+            can't be found, or if required data (readings, master instrument
+            numeric fields, weighing/temperature/electrical test data) is
+            missing or incomplete.
         HTTPException: 501 if the instrument's category doesn't have a
-            calculation engine implemented yet (Temperature, Electrical).
+            calculation engine implemented yet (none currently — all four
+            categories have calculation engines; Electrical's is newest).
     """
     try:
-        budget_data = formula_manager.build_uncertainty_budget(str(session_id))
+        budgets_data = formula_manager.build_uncertainty_budget(str(session_id))
     except NotImplementedError as e:
         raise HTTPException(status_code=501, detail=str(e))
     except (ValueError, FileNotFoundError) as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    return database.insert_uncertainty_budget(budget_data)
+    return [database.insert_uncertainty_budget(b) for b in budgets_data]
 
 
 # ── Weighing: Repeatability test ────────────────────────────────────────────
@@ -617,6 +628,70 @@ def get_temperature_repeatability_tests(
         list: Repeatability test records with nested readings.
     """
     return database.get_temperature_repeatability_tests(str(session_id))
+
+
+# ── Electrical: Test (one function-type/range) + readings ──────────────────
+
+@app.post("/api/sessions/{session_id}/electrical/tests")
+def create_electrical_test(
+    session_id: UUID,
+    payload: ElectricalTestCreate,
+    readings: list[ElectricalReadingCreate],
+    user_id: str = Depends(get_current_user_id),
+):
+    """Create an Electrical test (one function-type/range) and its readings together.
+
+    Args:
+        session_id: UUID of the calibration session.
+        payload: Test-level fields (function_type, range_label,
+            nominal_value, unit, cert_uncertainty_limit,
+            calibrator_accuracy_limit, resolution, thermo_electric_limit,
+            coil_accuracy_limit).
+        readings: The repeated readings for this function-type/range.
+        user_id: UUID of the authenticated user from JWT.
+
+    Returns:
+        dict: The created test record with its readings nested under "readings".
+
+    Raises:
+        HTTPException: 400 if no readings are supplied.
+    """
+    if not readings:
+        raise HTTPException(
+            status_code=400,
+            detail="An Electrical test requires at least one reading.",
+        )
+
+    test_data = payload.dict()
+    test_data["session_id"] = str(session_id)
+    test_record = database.insert_electrical_test(test_data)
+    test_id = test_record[0]["id"]
+
+    reading_rows = []
+    for r in readings:
+        row = r.dict()
+        row["test_id"] = test_id
+        reading_rows.append(row)
+    reading_records = database.insert_electrical_readings(reading_rows)
+
+    return {**test_record[0], "readings": reading_records}
+
+
+@app.get("/api/sessions/{session_id}/electrical/tests")
+def get_electrical_tests(
+    session_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Fetch all Electrical tests (with readings) for a session.
+
+    Args:
+        session_id: UUID of the calibration session.
+        user_id: UUID of the authenticated user from JWT.
+
+    Returns:
+        list: Electrical test records with nested readings.
+    """
+    return database.get_electrical_tests(str(session_id))
 
 
 # ── Validation ────────────────────────────────────────────────────────────────
