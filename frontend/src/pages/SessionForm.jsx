@@ -115,6 +115,8 @@ function SessionForm() {
         navigate(`/readings/weighing/${newSessionId}`);
       } else if (instrumentType === "Temperature") {
         navigate(`/readings/temperature/${newSessionId}`);
+      } else if (instrumentType === "Electrical") {
+        navigate(`/readings/electrical/${newSessionId}`);
       } else {
         navigate(`/readings/${newSessionId}`);
       }

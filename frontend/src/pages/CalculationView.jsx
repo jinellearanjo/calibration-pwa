@@ -3,13 +3,17 @@ import { useParams, useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import Spinner from "../components/Spinner";
 import SessionPicker from "../components/SessionPicker";
-import { getUncertaintyBudget, calculateUncertainty } from "../api";
+import {
+  getUncertaintyBudgets,
+  calculateUncertainty,
+  getTemperatureRepeatabilityTests,
+  getElectricalTests,
+} from "../api";
 
 // Every possible uncertainty budget field, across all categories, with a
-// human-readable label. Pressure and Weighing/Temperature populate
-// different subsets of these (see calculation_engine.py's build_*
-// functions) - only fields actually present (not null/undefined) in the
-// returned budget are rendered.
+// human-readable label. Each category populates a different subset (see
+// calculation_engine.py's build_* functions) - only fields actually
+// present (not null/undefined) in a given budget are rendered.
 const COMPONENT_FIELDS = [
   { key: "type_a_value", label: "Type A Uncertainty", group: "type_a" },
   { key: "u_std", label: "Standard's Uncertainty (u_std)", group: "type_b" },
@@ -26,6 +30,10 @@ const COMPONENT_FIELDS = [
   { key: "u_bath_stability", label: "Bath Stability Uncertainty (u_bath_stability)", group: "type_b" },
   { key: "u_bath_uniformity", label: "Bath Uniformity Uncertainty (u_bath_uniformity)", group: "type_b" },
   { key: "u_wire_homogeneity", label: "Wire Homogeneity Uncertainty (u_wire_homogeneity)", group: "type_b" },
+  { key: "u_b1", label: "Type B Component 1 (u_b1)", group: "type_b" },
+  { key: "u_b2", label: "Type B Component 2 (u_b2)", group: "type_b" },
+  { key: "u_b3", label: "Type B Component 3 (u_b3)", group: "type_b" },
+  { key: "u_b4", label: "Type B Component 4 (u_b4)", group: "type_b" },
 ];
 
 const SUMMARY_FIELDS = [
@@ -36,14 +44,20 @@ const SUMMARY_FIELDS = [
   { key: "final_applied_uncertainty", label: "Final Applied Uncertainty" },
 ];
 
-const NOT_YET_CALCULATED_MESSAGE = "Uncertainty budget not found.";
-
 /**
  * CalculationView component.
- * Fetches an existing uncertainty budget for a session if one exists, or
- * offers to calculate one via POST /api/sessions/{id}/calculate. Displays
- * the full component breakdown once available, with fields shown only if
- * present.
+ * Fetches all existing uncertainty budgets for a session if any exist, or
+ * offers to calculate them via POST /api/sessions/{id}/calculate. Always
+ * a list now - Pressure/Weighing sessions get exactly one (rendered
+ * exactly as before, no visual change for the common case); Temperature
+ * (one per setpoint) and Electrical (one per function-type/range) can
+ * have several, each rendered as its own card with a friendly label
+ * (setpoint name, or function type + range) fetched separately from
+ * whichever test-data endpoint applies.
+ *
+ * An empty list means "not calculated yet" - this used to be detected by
+ * catching a 404 with a specific message; the backend now just returns
+ * an empty array for this case, so no error handling is needed for it.
  *
  * Reachable two ways:
  *  - Directly from ReadingsForm with :sessionId already in the URL
@@ -62,40 +76,60 @@ function CalculationView() {
   const effectiveSessionId = urlSessionId || pickedSessionId;
   const showPicker = !urlSessionId;
 
-  const [budget, setBudget] = useState(null);
+  const [budgets, setBudgets] = useState([]);
+  const [labelMap, setLabelMap] = useState({});
   const [loading, setLoading] = useState(false);
   const [calculating, setCalculating] = useState(false);
   const [error, setError] = useState(null);
-  const [notYetCalculated, setNotYetCalculated] = useState(false);
 
-  const loadExistingBudget = useCallback(() => {
+  const loadExistingBudgets = useCallback(() => {
     if (!effectiveSessionId) {
-      setBudget(null);
-      setNotYetCalculated(false);
+      setBudgets([]);
       setError(null);
       return;
     }
     setLoading(true);
     setError(null);
-    getUncertaintyBudget(effectiveSessionId)
+    getUncertaintyBudgets(effectiveSessionId)
       .then(data => {
-        setBudget(data);
-        setNotYetCalculated(false);
+        setBudgets(data || []);
         setLoading(false);
       })
       .catch(err => {
-        if (err.message === NOT_YET_CALCULATED_MESSAGE) {
-          setNotYetCalculated(true);
-        } else {
-          setError(err.message);
-        }
+        setError(err.message);
         setLoading(false);
       });
   }, [effectiveSessionId]);
 
   useEffect(() => {
-    loadExistingBudget();
-  }, [loadExistingBudget]);
+    loadExistingBudgets();
+  }, [loadExistingBudgets]);
+
+  // Fetch friendly per-budget labels (setpoint name, or function type +
+  // range) when there's more than one budget - not needed for the common
+  // Pressure/Weighing/single-item case, and cheap to skip otherwise.
+  useEffect(() => {
+    if (budgets.length <= 1 || !effectiveSessionId) {
+      setLabelMap({});
+      return;
+    }
+    const first = budgets[0];
+    if (first.temperature_test_id) {
+      getTemperatureRepeatabilityTests(effectiveSessionId).then(tests => {
+        const map = {};
+        (tests || []).forEach(t => { map[t.id] = `Setpoint: ${t.setpoint_label}`; });
+        setLabelMap(map);
+      }).catch(() => setLabelMap({}));
+    } else if (first.electrical_test_id) {
+      getElectricalTests(effectiveSessionId).then(tests => {
+        const map = {};
+        (tests || []).forEach(t => { map[t.id] = `${t.function_type} — ${t.range_label}`; });
+        setLabelMap(map);
+      }).catch(() => setLabelMap({}));
+    } else {
+      setLabelMap({});
+    }
+  }, [budgets, effectiveSessionId]);
 
   function handleCalculate() {
     if (!effectiveSessionId) return;
@@ -103,8 +137,7 @@ function CalculationView() {
     setError(null);
     calculateUncertainty(effectiveSessionId)
       .then(data => {
-        setBudget(data);
-        setNotYetCalculated(false);
+        setBudgets(data || []);
         setCalculating(false);
       })
       .catch(err => {
@@ -113,11 +146,13 @@ function CalculationView() {
       });
   }
 
-  const presentComponentFields = budget
-    ? COMPONENT_FIELDS.filter(f => budget[f.key] !== null && budget[f.key] !== undefined)
-    : [];
+  function labelFor(budget) {
+    const testId = budget.temperature_test_id || budget.electrical_test_id;
+    return labelMap[testId] || null;
+  }
 
   const noSessionSelected = !effectiveSessionId;
+  const notYetCalculated = !loading && budgets.length === 0;
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--color-bg)" }}>
@@ -154,7 +189,7 @@ function CalculationView() {
             </div>
           )}
 
-          {!loading && (notYetCalculated || noSessionSelected) && !budget && (
+          {!loading && (notYetCalculated || noSessionSelected) && (
             <div style={{
               background: "var(--color-surface)", border: "1px solid var(--color-border)",
               borderRadius: "var(--radius)", padding: "32px", textAlign: "center",
@@ -169,31 +204,46 @@ function CalculationView() {
             </div>
           )}
 
-          {!loading && budget && (
+          {!loading && budgets.length > 0 && (
             <>
-              <div style={{
-                background: "var(--color-surface)", border: "1px solid var(--color-border)",
-                borderRadius: "var(--radius)", padding: "24px", marginBottom: 20,
-                boxShadow: "var(--shadow-sm)",
-              }}>
-                <h3 style={{ fontSize: 15, fontWeight: 600, color: "var(--color-primary)", marginBottom: 16 }}>
-                  Uncertainty Components
-                </h3>
-                <ComponentTable fields={presentComponentFields} budget={budget} />
-              </div>
+              {budgets.map((budget, index) => {
+                const label = labelFor(budget);
+                const presentComponentFields = COMPONENT_FIELDS.filter(
+                  f => budget[f.key] !== null && budget[f.key] !== undefined
+                );
+                return (
+                  <div key={budget.temperature_test_id || budget.electrical_test_id || index} style={{ marginBottom: 20 }}>
+                    {budgets.length > 1 && (
+                      <h2 style={{ fontSize: 16, fontWeight: 700, color: "var(--color-primary)", marginBottom: 12 }}>
+                        {label || `Budget ${index + 1} of ${budgets.length}`}
+                      </h2>
+                    )}
+                    <div style={{
+                      background: "var(--color-surface)", border: "1px solid var(--color-border)",
+                      borderRadius: "var(--radius)", padding: "24px", marginBottom: 20,
+                      boxShadow: "var(--shadow-sm)",
+                    }}>
+                      <h3 style={{ fontSize: 15, fontWeight: 600, color: "var(--color-primary)", marginBottom: 16 }}>
+                        Uncertainty Components
+                      </h3>
+                      <ComponentTable fields={presentComponentFields} budget={budget} />
+                    </div>
 
-              <div style={{
-                background: "var(--color-surface)", border: "1px solid var(--color-border)",
-                borderRadius: "var(--radius)", padding: "24px", marginBottom: 24,
-                boxShadow: "var(--shadow-sm)",
-              }}>
-                <h3 style={{ fontSize: 15, fontWeight: 600, color: "var(--color-primary)", marginBottom: 16 }}>
-                  Summary
-                </h3>
-                <ComponentTable fields={SUMMARY_FIELDS} budget={budget} highlightKey="final_applied_uncertainty" />
-              </div>
+                    <div style={{
+                      background: "var(--color-surface)", border: "1px solid var(--color-border)",
+                      borderRadius: "var(--radius)", padding: "24px",
+                      boxShadow: "var(--shadow-sm)",
+                    }}>
+                      <h3 style={{ fontSize: 15, fontWeight: 600, color: "var(--color-primary)", marginBottom: 16 }}>
+                        Summary
+                      </h3>
+                      <ComponentTable fields={SUMMARY_FIELDS} budget={budget} highlightKey="final_applied_uncertainty" />
+                    </div>
+                  </div>
+                );
+              })}
 
-              <div style={{ display: "flex", gap: 12 }}>
+              <div style={{ display: "flex", gap: 12, marginTop: 4 }}>
                 <CalculateButton onClick={handleCalculate} calculating={calculating} disabled={noSessionSelected} label="Recalculate" secondary />
                 <button
                   onClick={() => navigate(`/results/${effectiveSessionId}`)}

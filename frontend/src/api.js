@@ -156,18 +156,27 @@ export async function deleteMaster(masterId) {
  * @param {string} sessionId - UUID of the session.
  * @returns {Promise<Object>} The uncertainty budget record.
  */
-export async function getUncertaintyBudget(sessionId) {
+/**
+ * Fetch ALL uncertainty budgets calculated for a session.
+ * Pressure/Weighing sessions always have exactly one; Temperature (one
+ * per setpoint) and Electrical (one per function-type/range) can have
+ * several. Returns an empty array if none have been calculated yet -
+ * that's a normal state, not an error, so no try/catch is needed just to
+ * detect "not calculated yet" the way the old singular version required.
+ * @param {string} sessionId - UUID of the session.
+ * @returns {Promise<Array>} All uncertainty budget records for this session.
+ */
+export async function getUncertaintyBudgets(sessionId) {
   return request(`/api/sessions/${sessionId}/budget`);
 }
 
 /**
- * Calculate and store the uncertainty budget for a session.
- * Implemented for Pressure, Weighing, and Temperature (Temperature only
- * for a session with exactly one setpoint saved - see
- * TemperatureReadingsForm.jsx's docstring); Electrical will
- * return a 501 until their formula files are available.
+ * Calculate and store the uncertainty budget(s) for a session.
+ * Implemented for Pressure, Weighing, Temperature, and Electrical.
+ * Always returns a list now - one item for Pressure/Weighing, one item
+ * per setpoint for Temperature, one item per function-type/range for Electrical.
  * @param {string} sessionId - UUID of the session.
- * @returns {Promise<Object>} The calculated uncertainty budget record.
+ * @returns {Promise<Array>} The calculated uncertainty budget records.
  */
 export async function calculateUncertainty(sessionId) {
   return request(`/api/sessions/${sessionId}/calculate`, { method: "POST" });
@@ -185,8 +194,9 @@ export async function getResults(sessionId) {
 }
 
 // ── Weighing tests ────────────────────────────────────────────────────────────
-// Weighing sessions use three separate test-specific endpoints instead of the
-// single createReading/getReadings pair used by Pressure/Temperature/Electrical.
+// Weighing and Temperature sessions each use their own dedicated
+// repeatability endpoints (see further below) instead of the single
+// createReading/getReadings pair used by Pressure/Electrical.
 
 /**
  * Create a weighing repeatability test and its 10 readings together.
@@ -294,6 +304,34 @@ export async function createTemperatureRepeatabilityTest(sessionId, test, readin
  */
 export async function getTemperatureRepeatabilityTests(sessionId) {
   return request(`/api/sessions/${sessionId}/temperature/repeatability`);
+}
+
+// ── Electrical tests ─────────────────────────────────────────────────────────
+
+/**
+ * Create an Electrical test (one function-type/range) and its readings together.
+ * @param {string} sessionId - UUID of the session.
+ * @param {Object} test - Test-level fields (function_type, range_label,
+ *   nominal_value, unit, cert_uncertainty_limit, calibrator_accuracy_limit,
+ *   resolution, thermo_electric_limit, coil_accuracy_limit).
+ * @param {Array} readings - The repeated readings for this function-type/range.
+ * @returns {Promise<Object>} The created test record with nested readings.
+ */
+export async function createElectricalTest(sessionId, test, readings) {
+  // Same embedded-body requirement as create(Weighing|Temperature)RepeatabilityTest.
+  return request(`/api/sessions/${sessionId}/electrical/tests`, {
+    method: "POST",
+    body: JSON.stringify({ payload: test, readings }),
+  });
+}
+
+/**
+ * Fetch all Electrical tests (with readings) for a session.
+ * @param {string} sessionId - UUID of the session.
+ * @returns {Promise<Array>} Electrical test records with nested readings.
+ */
+export async function getElectricalTests(sessionId) {
+  return request(`/api/sessions/${sessionId}/electrical/tests`);
 }
 
 // ── Reports ───────────────────────────────────────────────────────────────────

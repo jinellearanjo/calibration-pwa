@@ -8,8 +8,19 @@ import SessionPicker from "../components/SessionPicker";
 
 /**
  * ResultsView component.
- * Displays the validation result for a calibration session including
- * status, uncertainty values, acceptance limit, CMC, and any flags.
+ * Displays the validation result for a calibration session: overall
+ * compliance status, acceptance limit, and a per-budget breakdown.
+ *
+ * Pressure/Weighing sessions have exactly one budget, shown as a single
+ * summary table (same layout as before this component supported multiple
+ * budgets). Temperature (one per setpoint) and Electrical (one per
+ * function-type/range) can have several - each gets its own row, with
+ * whichever specific setpoint/range caused a REJECTED or REVIEW REQUIRED
+ * result visually highlighted, not just named in a flag buried in a list.
+ * The overall session status is "worst case wins" across every budget
+ * (see validation.py) - a single failing setpoint/range is enough to
+ * make the whole session non-ACCEPTED, so surfacing exactly which one
+ * failed is the most useful thing this screen can show.
  *
  * Reachable two ways:
  *  - Directly from CalculationView with :sessionId already in the URL
@@ -140,23 +151,48 @@ function ResultsView() {
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                   <thead>
                     <tr style={{ background: "var(--color-primary)" }}>
-                      <th style={thStyle}>Parameter</th>
-                      <th style={{ ...thStyle, textAlign: "right" }}>Value</th>
+                      {result.budgets && result.budgets.length > 1 && (
+                        <th style={thStyle}>Setpoint / Range</th>
+                      )}
+                      <th style={thStyle}>Status</th>
+                      <th style={{ ...thStyle, textAlign: "right" }}>Final Applied Uncertainty</th>
+                      <th style={{ ...thStyle, textAlign: "right" }}>CMC</th>
                     </tr>
                   </thead>
                   <tbody>
-                    <ResultRow
-                      label="Final Applied Uncertainty"
-                      value={result.final_applied_uncertainty !== null ? `± ${result.final_applied_uncertainty}` : "—"}
-                    />
+                    {(result.budgets || []).map((budget, index) => {
+                      const isFailing = budget.status !== "ACCEPTED";
+                      return (
+                        <tr
+                          key={index}
+                          style={{
+                            background: isFailing ? "#FEF2F2" : (index % 2 === 1 ? "#F9FAFB" : "white"),
+                            borderLeft: isFailing ? "3px solid var(--color-error)" : "3px solid transparent",
+                          }}
+                        >
+                          {result.budgets.length > 1 && (
+                            <td style={{ padding: "12px 16px", fontWeight: 500, color: "var(--color-text)" }}>
+                              {budget.identifier || `Item ${index + 1}`}
+                            </td>
+                          )}
+                          <td style={{ padding: "12px 16px" }}>
+                            <StatusBadge status={budget.status} />
+                          </td>
+                          <td style={{ padding: "12px 16px", textAlign: "right", fontFamily: "var(--font-mono)" }}>
+                            {budget.final_applied_uncertainty !== null && budget.final_applied_uncertainty !== undefined
+                              ? `± ${budget.final_applied_uncertainty}`
+                              : "—"}
+                          </td>
+                          <td style={{ padding: "12px 16px", textAlign: "right", fontFamily: "var(--font-mono)" }}>
+                            {budget.cmc !== null && budget.cmc !== undefined ? budget.cmc : "—"}
+                          </td>
+                        </tr>
+                      );
+                    })}
                     <ResultRow
                       label="Acceptance Limit"
                       value={result.acceptance_limit !== null ? result.acceptance_limit : "—"}
                       alt
-                    />
-                    <ResultRow
-                      label="CMC"
-                      value={result.cmc !== null ? result.cmc : "—"}
                     />
                   </tbody>
                 </table>
