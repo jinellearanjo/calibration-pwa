@@ -1,77 +1,63 @@
+import httpx
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
 from config import settings
 
-
 security = HTTPBearer()
+
+_jwks_cache: dict | None = None
+JWKS_URL = f"{settings.supabase_url}/auth/v1/.well-known/jwks.json"
+
+
+def _get_jwks() -> dict:
+    global _jwks_cache
+    if _jwks_cache is None:
+        response = httpx.get(JWKS_URL, timeout=10)
+        response.raise_for_status()
+        _jwks_cache = response.json()
+    return _jwks_cache
+
+
+def _get_signing_key(token: str) -> dict:
+    global _jwks_cache
+    unverified_header = jwt.get_unverified_header(token)
+    kid = unverified_header.get("kid")
+    for key in _get_jwks()["keys"]:
+        if key["kid"] == kid:
+            return key
+    _jwks_cache = None
+    for key in _get_jwks()["keys"]:
+        if key["kid"] == kid:
+            return key
+    raise JWTError(f"No matching JWKS key found for kid={kid}")
 
 
 def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
-    """Verify a Supabase JWT token and return the decoded payload.
-
-    Called as a FastAPI dependency on any protected route. Rejects requests
-    that carry an invalid, expired, or missing token.
-
-    Args:
-        credentials: Bearer token extracted from the Authorization header
-            by HTTPBearer.
-
-    Returns:
-        dict: Decoded JWT payload containing user_id and other claims.
-
-    Raises:
-        HTTPException: 401 if the token is missing, invalid, or expired.
-    """
     token = credentials.credentials
-
     try:
-        # Supabase JWTs are signed with the project JWT secret and carry
-        # "aud": "authenticated" for logged-in users. Previously this
-        # disabled audience verification (verify_aud: False) - meaning any
-        # valid-signature JWT from ANY app sharing this same Supabase
-        # project's JWT secret would be accepted here, regardless of what
-        # audience it was actually issued for. Verified this was really
-        # disabled (not just a stale comment) by reading this file
-        # directly - fixed by requiring the standard Supabase audience.
+        signing_key = _get_signing_key(token)
         payload = jwt.decode(
             token,
-            settings.supabase_jwt_secret,
-            algorithms=["HS256"],
+            signing_key,
+            algorithms=["ES256"],
             audience="authenticated",
         )
         return payload
-
-    except JWTError:
+    except JWTError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token.",
+            detail=f"Invalid or expired token: {e}",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
 
 def get_current_user_id(payload: dict = Depends(verify_token)) -> str:
-    """Extract the user ID from a verified JWT payload.
-
-    Used as a dependency on routes that need to scope database queries
-    to the authenticated user.
-
-    Args:
-        payload: Decoded JWT payload from verify_token.
-
-    Returns:
-        str: The user's UUID from the token subject claim.
-
-    Raises:
-        HTTPException: 401 if the user ID claim is missing from the token.
-    """
     user_id = payload.get("sub")
-
     if not user_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User ID not found in token.",
             headers={"WWW-Authenticate": "Bearer"},
         )
-
     return user_id
