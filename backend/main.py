@@ -395,6 +395,15 @@ def calculate_uncertainty_budget(
     except (ValueError, FileNotFoundError) as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    # Clear any existing budgets for this session before inserting the
+    # freshly-calculated ones - without this, recalculating (e.g.
+    # clicking "Recalculate" in CalculationView.jsx) would accumulate
+    # duplicate rows every time, since insert_uncertainty_budget has no
+    # dedup/upsert logic of its own. Deliberately done only after the
+    # calculation above succeeds, so a failed recalculation doesn't wipe
+    # out a session's last-known-good budgets.
+    database.delete_uncertainty_budgets(str(session_id))
+
     return [database.insert_uncertainty_budget(b) for b in budgets_data]
 
 
@@ -432,6 +441,16 @@ def create_weighing_repeatability_test(
     test_data = payload.dict()
     test_data["session_id"] = str(session_id)
     test_record = database.insert_weighing_repeatability_test(test_data)
+    # Guards against an empty insert response (e.g. an RLS SELECT policy
+    # silently filtering the row back out despite a successful insert -
+    # a known Supabase/PostgREST gotcha) turning into an opaque, unhandled
+    # IndexError/500 rather than a clear error message. Verified this
+    # codebase's insert_* functions have no such guard themselves.
+    if not test_record:
+        raise HTTPException(
+            status_code=500,
+            detail="Weighing repeatability test insert returned no data - the row may not have been created, or an RLS policy is hiding it from this response.",
+        )
     test_id = test_record[0]["id"]
 
     reading_rows = []
@@ -601,6 +620,13 @@ def create_temperature_repeatability_test(
     test_data = payload.dict()
     test_data["session_id"] = str(session_id)
     test_record = database.insert_temperature_repeatability_test(test_data)
+    # See the identical guard in create_weighing_repeatability_test above
+    # for why this check exists.
+    if not test_record:
+        raise HTTPException(
+            status_code=500,
+            detail="Temperature repeatability test insert returned no data - the row may not have been created, or an RLS policy is hiding it from this response.",
+        )
     test_id = test_record[0]["id"]
 
     reading_rows = []
@@ -665,6 +691,13 @@ def create_electrical_test(
     test_data = payload.dict()
     test_data["session_id"] = str(session_id)
     test_record = database.insert_electrical_test(test_data)
+    # See the identical guard in create_weighing_repeatability_test above
+    # for why this check exists.
+    if not test_record:
+        raise HTTPException(
+            status_code=500,
+            detail="Electrical test insert returned no data - the row may not have been created, or an RLS policy is hiding it from this response.",
+        )
     test_id = test_record[0]["id"]
 
     reading_rows = []

@@ -26,12 +26,19 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)) 
     token = credentials.credentials
 
     try:
-        # Supabase JWTs are signed with the project JWT secret.
+        # Supabase JWTs are signed with the project JWT secret and carry
+        # "aud": "authenticated" for logged-in users. Previously this
+        # disabled audience verification (verify_aud: False) - meaning any
+        # valid-signature JWT from ANY app sharing this same Supabase
+        # project's JWT secret would be accepted here, regardless of what
+        # audience it was actually issued for. Verified this was really
+        # disabled (not just a stale comment) by reading this file
+        # directly - fixed by requiring the standard Supabase audience.
         payload = jwt.decode(
             token,
             settings.supabase_jwt_secret,
             algorithms=["HS256"],
-            options={"verify_aud": False},
+            audience="authenticated",
         )
         return payload
 

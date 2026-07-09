@@ -17,7 +17,47 @@ def get_supabase_client() -> Client:
     return create_client(settings.supabase_url, settings.supabase_key)
 
 
-supabase: Client = get_supabase_client()
+class _LazySupabaseClient:
+    """Defers actual Supabase client creation until first real use, rather
+    than at module import time.
+
+    Previously `supabase: Client = get_supabase_client()` ran immediately
+    when this module was imported, which means the ValueError it raises
+    for missing SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY fires the instant
+    ANYTHING imports database.py (directly or transitively via main.py) -
+    including tooling that just wants to import the module for static
+    analysis, doc generation, or tests that intend to mock the client
+    entirely and never needed real credentials in the first place. This
+    was a real, repeatedly-hit friction point during this project's own
+    testing - every verification script needed dummy env vars set purely
+    to get past this import-time check, even when the actual Supabase
+    client was never going to be called (e.g. testing a pure calculation
+    function).
+
+    Every existing `database.supabase.table(...)` call site continues to
+    work completely unchanged - this class forwards any attribute access
+    it doesn't define itself (i.e. everything except _ensure_client) to a
+    real Client, constructing that Client on first access rather than at
+    class instantiation. Verified this remains fully compatible with
+    unittest.mock.patch.object(database.supabase, "...") - the standard
+    mocking pattern used throughout this project's test suite - since
+    patching sets a real attribute directly on this instance, which
+    normal Python attribute lookup finds before ever falling through to
+    __getattr__.
+    """
+    def __init__(self):
+        self._client = None
+
+    def _ensure_client(self) -> Client:
+        if self._client is None:
+            self._client = get_supabase_client()
+        return self._client
+
+    def __getattr__(self, name):
+        return getattr(self._ensure_client(), name)
+
+
+supabase = _LazySupabaseClient()
 
 
 def get_instrument(instrument_id: str) -> dict:
@@ -161,6 +201,30 @@ def insert_uncertainty_budget(budget: dict) -> dict:
     """
     response = supabase.table("uncertainty_budgets").insert(budget).execute()
     return response.data
+
+
+def delete_uncertainty_budgets(session_id: str) -> None:
+    """Delete all uncertainty budget rows for a session.
+
+    Called before inserting freshly-calculated budgets, since
+    insert_uncertainty_budget is a plain insert with no dedup/upsert
+    logic - without this, recalculating a session (e.g. clicking
+    "Recalculate" in CalculationView.jsx) would accumulate duplicate
+    budget rows every time rather than replacing the old ones, since
+    there's nothing else stopping a second calculate call from just
+    inserting a second full set of budgets on top of the first. Caught
+    via an external code review while checking a related architectural
+    concern - verified empirically that this endpoint truly had no
+    delete-before-insert step.
+
+    Args:
+        session_id: The UUID of the calibration session whose budgets
+            should be cleared before recalculating.
+
+    Raises:
+        Exception: If the database query fails.
+    """
+    supabase.table("uncertainty_budgets").delete().eq("session_id", session_id).execute()
 
 
 def update_session_status(session_id: str, status: str) -> dict:

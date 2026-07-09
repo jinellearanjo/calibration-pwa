@@ -503,9 +503,29 @@ def lookup_cmc_band(cmc_bands: list[dict], load_value: float) -> dict | None:
 
     Returns:
         dict | None: The matching band, or None if no band covers this load_value.
+
+    Note:
+        Uses an inclusive upper bound (min_value <= load_value <= max_value).
+        Previously the upper bound was exclusive (< max_value), meaning a
+        load tested at EXACTLY the top of the highest band (a completely
+        normal case - e.g. a "100% of range" test point, which Weighing's
+        own hundred_percent test point can easily land on) would match no
+        band at all and raise a confusing "no CMC band found" error,
+        despite the data actually covering that exact value. Caught via
+        an external code review, confirmed this function (not just the
+        similarly-shaped but actually-unused database.get_cmc_band) is
+        the one real code paths call.
+
+        Caveat: if bands are stored as contiguous and adjacent (e.g. one
+        band's max_value equals the next band's min_value), a load value
+        landing exactly on that shared boundary will now match whichever
+        band appears first in cmc_bands' order - which isn't guaranteed
+        by this function alone. If your real seeded bands have adjacent
+        boundaries like this, worth confirming they're ordered as
+        expected, or storing them with a small gap/explicit tie-break.
     """
     for band in cmc_bands:
-        if band["min_value"] <= load_value < band["max_value"]:
+        if band["min_value"] <= load_value <= band["max_value"]:
             return band
     return None
 
