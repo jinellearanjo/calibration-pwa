@@ -74,10 +74,31 @@ function InstrumentForm() {
   }
 
   function updateUuc(field, value) {
-    setUucData(prev => ({ ...prev, [field]: value }));
-    setErrors(prev => ({ ...prev, [field]: validate(field, value) }));
-    setIsDirty(true);
-  }
+      setUucData(prev => {
+        const nextData = { ...prev, [field]: value };
+        
+        // If the instrument category type changes, reset the chosen unit
+        if (field === "type") {
+          nextData.unit = "";
+        }
+        
+        return nextData;
+      });
+
+      setErrors(prev => {
+        const nextErrors = { ...prev, [field]: validate(field, value) };
+        
+        // If type changed, clear out any old validation errors for the unit field
+        if (field === "type") {
+          nextErrors.unit = "";
+        }
+        
+        return nextErrors;
+      });
+
+      setIsDirty(true);
+    }
+    }
 
   const hasErrors = Object.values(errors).some(Boolean);
   const allFilled = [...requiredRef, ...requiredUuc].every(f =>
@@ -164,7 +185,20 @@ function InstrumentForm() {
             <Field label="Serial Number" id="serial_number" value={uucData.serial_number} onChange={v => updateUuc("serial_number", v)} error={errors.serial_number} />
             <Field label="Accuracy Class" id="accuracy_class" type="number" value={uucData.accuracy_class} onChange={v => updateUuc("accuracy_class", v)} error={errors.accuracy_class} />
             <Field label="Resolution" id="resolution" type="number" value={uucData.resolution} onChange={v => updateUuc("resolution", v)} error={errors.resolution} />
-            <SelectField label="Unit" id="unit" value={uucData.unit} onChange={v => updateUuc("unit", v)} error={errors.unit} options={["bar", "psi", "kPa", "MPa", "mbar"]} />
+            <SelectField 
+              label="Unit" 
+              id="unit" 
+              value={uucData.unit} 
+              onChange={v => updateUuc("unit", v)} 
+              error={errors.unit} 
+              options={
+                uucData.type === "Pressure" ? ["bar", "psi", "kPa", "MPa", "mbar"] :
+                uucData.type === "Temperature" ? ["°C"] :
+                uucData.type === "Weighing" ? ["g", "kg", "mg"] :
+                uucData.type === "Electrical" ? ["V", "mV", "A", "mA", "\u00B5A", "\u2126", "k\u2126", "M\u2126", "G\u2126", "Hz", "kHz", "MHz"] : 
+                []
+              } 
+            />
             <Field label="Range Min" id="range_min" type="number" value={uucData.range_min} onChange={v => updateUuc("range_min", v)} error={errors.range_min} />
             <Field label="Range Max" id="range_max" type="number" value={uucData.range_max} onChange={v => updateUuc("range_max", v)} error={errors.range_max} />
             <Field label="Tag Number (optional)" id="tag_number" value={uucData.tag_number} onChange={v => updateUuc("tag_number", v)} error={errors.tag_number} />
