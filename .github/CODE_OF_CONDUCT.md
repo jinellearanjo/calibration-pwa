@@ -3,7 +3,7 @@
 ## Our Standards
 
 This project is developed as part of a BITS Pilani Practice School (PS-1)
-internship at Instruworks LLC FZ. Everyone contributing — students,
+internship at Instruworks LLC FZ. Everyone contributing: students,
 supervisors, and reviewers — is expected to help keep collaboration
 constructive and professional.
 
