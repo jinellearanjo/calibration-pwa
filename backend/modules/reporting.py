@@ -66,6 +66,7 @@ from database import (
     get_weighing_off_center_readings,   # weighing_off_center_readings
     get_weighing_hysteresis_readings,   # weighing_hysteresis_readings
     get_temperature_repeatability_tests,  # temperature_repeatability_tests + nested readings
+    get_electrical_tests,        # electrical_tests + nested readings
     insert_audit_log,           # audit_log table
 )
 
@@ -237,6 +238,18 @@ class ReportData:
     weighing_off_center: list[dict[str, Any]] = field(default_factory=list)
     weighing_hysteresis: list[dict[str, Any]] = field(default_factory=list)
     temperature_repeatability: list[dict[str, Any]] = field(default_factory=list)
+    electrical_tests: list[dict[str, Any]] = field(default_factory=list)
+
+    # ALL uncertainty budget rows for this session, regardless of count -
+    # used by _build_uncertainty_budget_blocks to render either a single
+    # flat table (1 budget - the common case) or one labeled block per
+    # setpoint/range (2+ budgets, Temperature/Electrical only). The flat
+    # single-budget fields below (type_a_value, u_std, etc.) are ONLY
+    # populated when there's exactly one budget, for backward compatibility
+    # with anything that might read them directly - they're genuinely
+    # ambiguous with more than one budget, so they stay None rather than
+    # silently picking one.
+    all_uncertainty_budgets: list[dict[str, Any]] = field(default_factory=list)
 
     # uncertainty_budgets — spec field names used verbatim
     type_a_value: Any = None
@@ -316,6 +329,7 @@ def gather_report_data(session_id: str) -> ReportData:
     weighing_off_center_rows: list[dict[str, Any]] = []
     weighing_hysteresis_rows: list[dict[str, Any]] = []
     temperature_repeatability_rows: list[dict[str, Any]] = []
+    electrical_tests_rows: list[dict[str, Any]] = []
 
     if instrument_type == "Weighing":
         weighing_repeatability_rows = get_weighing_repeatability_tests(session_id) or []
@@ -323,30 +337,28 @@ def gather_report_data(session_id: str) -> ReportData:
         weighing_hysteresis_rows = get_weighing_hysteresis_readings(session_id) or []
     elif instrument_type == "Temperature":
         temperature_repeatability_rows = get_temperature_repeatability_tests(session_id) or []
+    elif instrument_type == "Electrical":
+        # Previously fell through to the generic readings table (wrong -
+        # Electrical has its own dedicated tables, same reasoning as
+        # Weighing/Temperature). Caught while building the multi-budget
+        # certificate section.
+        electrical_tests_rows = get_electrical_tests(session_id) or []
     else:
-        # Pressure / Electrical - empty list is valid for a draft session
+        # Pressure - empty list is valid for a draft session
         readings_rows = get_readings(session_id) or []
 
     # uncertainty_budgets - now a LIST (formula_manager always returns a
-    # list; Temperature/Electrical can have more than one). Certificates
-    # showing a proper per-setpoint/range uncertainty breakdown for
-    # multi-budget sessions is a known follow-up piece of work, same
-    # category as the Calibration Readings table redesign - NOT silently
-    # picking one budget or rendering something misleading in the
-    # meantime, failing loudly and clearly instead.
+    # list; Temperature/Electrical can have more than one). The flat
+    # single-budget fields (type_a_value, u_std, etc. below) are only
+    # populated when there's exactly one budget - genuinely ambiguous
+    # with more than one, so left as None rather than silently picking
+    # one. Renderers use _build_uncertainty_budget_blocks (built from
+    # all_uncertainty_budgets) instead of the flat fields directly, so
+    # both the single- and multi-budget cases render correctly.
     uncertainty_records = get_uncertainty_budgets(session_id) or []
     if not uncertainty_records:
         raise RuntimeError(f"No uncertainty_budgets record found for session_id={session_id}.")
-    if len(uncertainty_records) > 1:
-        raise RuntimeError(
-            f"Session {session_id} has {len(uncertainty_records)} uncertainty budgets "
-            f"(one per Temperature setpoint or Electrical function-type/range). "
-            f"Certificate generation for multi-budget sessions isn't built yet - "
-            f"only single-budget sessions (Pressure, Weighing, or a Temperature/"
-            f"Electrical session with exactly one setpoint/range) can generate "
-            f"a certificate right now."
-        )
-    uncertainty_record = uncertainty_records[0]
+    uncertainty_record = uncertainty_records[0] if len(uncertainty_records) == 1 else {}
 
     # master_instruments — linked via calibration_sessions.master_instrument_id
     master_instrument_id = session_record.get("master_instrument_id")
@@ -414,6 +426,7 @@ def gather_report_data(session_id: str) -> ReportData:
         weighing_off_center=weighing_off_center_rows,
         weighing_hysteresis=weighing_hysteresis_rows,
         temperature_repeatability=temperature_repeatability_rows,
+        electrical_tests=electrical_tests_rows,
 
         type_a_value=uncertainty_record.get("type_a_value"),
         u_std=uncertainty_record.get("u_std"),
@@ -434,6 +447,7 @@ def gather_report_data(session_id: str) -> ReportData:
         expanded_uncertainty=uncertainty_record.get("expanded_uncertainty"),
         k_value=uncertainty_record.get("k_value"),
         final_applied_uncertainty=uncertainty_record.get("final_applied_uncertainty"),
+        all_uncertainty_budgets=uncertainty_records,
     )
 
 
@@ -532,8 +546,30 @@ def _build_readings_blocks(report_data: ReportData) -> list[dict[str, Any]]:
                 ])
         return [{"title": None, "header": header, "rows": rows}]
 
-    # Default: Pressure / Electrical - the original ascending/descending
-    # shape, unchanged from before this function existed. The "\n" in the
+    if instrument_type == "Electrical":
+        # Previously fell through to the default Pressure-shaped branch
+        # below (wrong - Electrical has its own dedicated tables, same
+        # reasoning as Weighing/Temperature above). Caught while building
+        # the multi-budget certificate section.
+        header = ["Function Type", "Range", "Unit", "Reading #", "Reading Value"]
+        rows: list[list[str]] = []
+        for test in report_data.electrical_tests:
+            nested_readings = sorted(
+                test.get("electrical_readings") or [],
+                key=lambda r: r.get("reading_number", 0),
+            )
+            for r in nested_readings:
+                rows.append([
+                    _safe_str(test.get("function_type")),
+                    _safe_str(test.get("range_label")),
+                    _safe_str(test.get("unit")),
+                    _safe_str(r.get("reading_number")),
+                    _safe_str(r.get("reading_value")),
+                ])
+        return [{"title": None, "header": header, "rows": rows}]
+
+    # Default: Pressure - the original ascending/descending shape,
+    # unchanged from before this function existed. The "\n" in the
     # PDF-facing header is preserved further down where the PDF story is
     # built, since ReportLab's Table splits plain-string cells on "\n"
     # into wrapped lines (verified empirically) but openpyxl should not
@@ -550,6 +586,93 @@ def _build_readings_blocks(report_data: ReportData) -> list[dict[str, Any]]:
         for row in report_data.readings
     ]
     return [{"title": None, "header": header, "rows": rows}]
+
+
+def _build_uncertainty_budget_blocks(report_data: ReportData) -> list[dict[str, Any]]:
+    """Build the Measurement Uncertainty Budget block(s) for whichever
+    session this is - one flat block for the common single-budget case
+    (Pressure, Weighing, or a Temperature/Electrical session with exactly
+    one setpoint/range), or one labeled block per budget for a
+    multi-budget session.
+
+    Each block is a dict with:
+        title: str | None - sub-heading (setpoint label, or function type
+            + range) shown above this block's table. None for the
+            single-budget case, matching the certificate's look before
+            multi-budget sessions existed - no heading needed when
+            there's only one budget to show.
+        rows: list[tuple[str, str]] - (label, pre-stringified value) pairs,
+            ready for either the PDF's key-value table or the Excel
+            label/value writer.
+
+    Shared by generate_pdf_report and generate_excel_report, same
+    single-source-of-truth reasoning as _build_readings_blocks.
+    """
+    # Every possible component field across all categories, with a label -
+    # only fields actually present (not None) in a given budget are
+    # rendered, same pattern the frontend's CalculationView.jsx uses.
+    component_fields = [
+        ("Type A Uncertainty (u_A)", "type_a_value"),
+        ("Standard Uncertainty (u_std)", "u_std"),
+        ("Standard's Accuracy Uncertainty (u_std_accuracy)", "u_std_accuracy"),
+        ("Resolution Uncertainty (u_res)", "u_res"),
+        ("Hysteresis Uncertainty (u_hys)", "u_hys"),
+        ("Zero Uncertainty (u_zero)", "u_zero"),
+        ("Temperature Influence Uncertainty (u_temp)", "u_temp"),
+        ("Repeatability Uncertainty (u_repeatability)", "u_repeatability"),
+        ("Standard Weights Uncertainty (u_std_weights)", "u_std_weights"),
+        ("Eccentric Loading Uncertainty (u_eccentric)", "u_eccentric"),
+        ("Drift of Standard Uncertainty (u_drift)", "u_drift"),
+        ("Bath Stability Uncertainty (u_bath_stability)", "u_bath_stability"),
+        ("Bath Uniformity Uncertainty (u_bath_uniformity)", "u_bath_uniformity"),
+        ("Wire Homogeneity Uncertainty (u_wire_homogeneity)", "u_wire_homogeneity"),
+        ("Type B Component 1 (u_b1)", "u_b1"),
+        ("Type B Component 2 (u_b2)", "u_b2"),
+        ("Type B Component 3 (u_b3)", "u_b3"),
+        ("Type B Component 4 (u_b4)", "u_b4"),
+    ]
+    summary_fields = [
+        ("CMC", "cmc"),
+        ("Combined Uncertainty (u_c)", "combined_uncertainty"),
+        ("Expanded Uncertainty (U)", "expanded_uncertainty"),
+        ("Coverage Factor (k)", "k_value"),
+        ("Final Applied Uncertainty", "final_applied_uncertainty"),
+    ]
+
+    budgets = report_data.all_uncertainty_budgets
+    label_by_test_id = _uncertainty_budget_label_lookup(report_data)
+
+    blocks = []
+    for budget in budgets:
+        test_id = budget.get("temperature_test_id") or budget.get("electrical_test_id")
+        title = label_by_test_id.get(test_id) if len(budgets) > 1 else None
+
+        rows = [
+            (label, _safe_str(budget.get(key)))
+            for label, key in component_fields
+            if budget.get(key) is not None
+        ]
+        rows += [(label, _safe_str(budget.get(key))) for label, key in summary_fields]
+        blocks.append({"title": title, "rows": rows})
+
+    return blocks
+
+
+def _uncertainty_budget_label_lookup(report_data: ReportData) -> dict[str, str]:
+    """Build a test id -> human-readable label map for multi-budget
+    sessions, e.g. {"test-uuid-1": "Setpoint: 110c"} or
+    {"test-uuid-2": "ACV - 200mV"}.
+
+    Only meaningful (and only called) when there's more than one budget -
+    Pressure/Weighing's single budget has no temperature_test_id/
+    electrical_test_id to look up, so an empty map is harmless there.
+    """
+    labels: dict[str, str] = {}
+    for test in report_data.temperature_repeatability:
+        labels[test["id"]] = f"Setpoint: {test.get('setpoint_label')}"
+    for test in report_data.electrical_tests:
+        labels[test["id"]] = f"{test.get('function_type')} - {test.get('range_label')}"
+    return labels
 
 
 def _format_date(raw_date: Any) -> str:
@@ -1031,41 +1154,21 @@ def _build_pdf_story(
     # Uncertainty budget
     spacer()
     heading("Measurement Uncertainty Budget")
-    pdf_optional_component_fields = [
-        ("Type A Uncertainty (u_A):", report_data.type_a_value),
-        ("Standard Uncertainty (u_std):", report_data.u_std),
-        ("Standard's Accuracy Uncertainty (u_std_accuracy):", report_data.u_std_accuracy),
-        ("Resolution Uncertainty (u_res):", report_data.u_res),
-        ("Hysteresis Uncertainty (u_hys):", report_data.u_hys),
-        ("Zero Uncertainty (u_zero):", report_data.u_zero),
-        ("Temperature Influence Uncertainty (u_temp):", report_data.u_temp),
-        ("Repeatability Uncertainty (u_repeatability):", report_data.u_repeatability),
-        ("Standard Weights Uncertainty (u_std_weights):", report_data.u_std_weights),
-        ("Eccentric Loading Uncertainty (u_eccentric):", report_data.u_eccentric),
-        ("Drift of Standard Uncertainty (u_drift):", report_data.u_drift),
-        ("Bath Stability Uncertainty (u_bath_stability):", report_data.u_bath_stability),
-        ("Bath Uniformity Uncertainty (u_bath_uniformity):", report_data.u_bath_uniformity),
-        ("Wire Homogeneity Uncertainty (u_wire_homogeneity):", report_data.u_wire_homogeneity),
-    ]
-    uncertainty_rows = [
-        (label, _safe_str(value))
-        for label, value in pdf_optional_component_fields
-        if value is not None
-    ]
-    uncertainty_rows += [
-        ("CMC:", _safe_str(report_data.cmc)),
-        ("Combined Uncertainty (u_c):", _safe_str(report_data.combined_uncertainty)),
-        ("Expanded Uncertainty (U):", _safe_str(report_data.expanded_uncertainty)),
-        ("Coverage Factor (k):", _safe_str(report_data.k_value)),
-        ("Final Applied Uncertainty:", _safe_str(report_data.final_applied_uncertainty)),
-    ]
-    story.append(
-        _build_kv_table(
-            uncertainty_rows,
-            styles,
-            [label_col_wide, value_col_wide],
+    budget_blocks = _build_uncertainty_budget_blocks(report_data)
+    for block in budget_blocks:
+        if block["title"]:
+            story.append(Paragraph(block["title"], styles["body_bold"]))
+            story.append(Spacer(1, 4))
+        pdf_rows = [(f"{label}:", value) for label, value in block["rows"]]
+        story.append(
+            _build_kv_table(
+                pdf_rows,
+                styles,
+                [label_col_wide, value_col_wide],
+            )
         )
-    )
+        if block is not budget_blocks[-1]:
+            spacer()
 
     # Compliance statement
     spacer()
@@ -1442,43 +1545,18 @@ def generate_excel_report(session_id: str) -> FileResponse:
     write_section_heading(current_row, "Measurement Uncertainty Budget")
     current_row += 1
 
-    # Every possible component across all categories - only ones actually
-    # present (not None) for this session's category get rendered, same
-    # pattern as CalculationView.jsx uses on the frontend. Avoids hardcoding
-    # a Pressure-only field list that would silently omit Weighing's/
-    # Temperature's real components from the certificate.
-    optional_component_fields = [
-        ("Type A Uncertainty (u_A)", report_data.type_a_value),
-        ("Standard Uncertainty (u_std)", report_data.u_std),
-        ("Standard's Accuracy Uncertainty (u_std_accuracy)", report_data.u_std_accuracy),
-        ("Resolution Uncertainty (u_res)", report_data.u_res),
-        ("Hysteresis Uncertainty (u_hys)", report_data.u_hys),
-        ("Zero Uncertainty (u_zero)", report_data.u_zero),
-        ("Temperature Influence Uncertainty (u_temp)", report_data.u_temp),
-        ("Repeatability Uncertainty (u_repeatability)", report_data.u_repeatability),
-        ("Standard Weights Uncertainty (u_std_weights)", report_data.u_std_weights),
-        ("Eccentric Loading Uncertainty (u_eccentric)", report_data.u_eccentric),
-        ("Drift of Standard Uncertainty (u_drift)", report_data.u_drift),
-        ("Bath Stability Uncertainty (u_bath_stability)", report_data.u_bath_stability),
-        ("Bath Uniformity Uncertainty (u_bath_uniformity)", report_data.u_bath_uniformity),
-        ("Wire Homogeneity Uncertainty (u_wire_homogeneity)", report_data.u_wire_homogeneity),
-    ]
-    for label, value in optional_component_fields:
-        if value is not None:
+    budget_blocks = _build_uncertainty_budget_blocks(report_data)
+    for block in budget_blocks:
+        if block["title"]:
+            sub_heading_cell = worksheet.cell(row=current_row, column=1, value=block["title"])
+            sub_heading_cell.font = label_font
+            current_row += 1
+
+        for label, value in block["rows"]:
             write_label_value(current_row, label, value)
             current_row += 1
 
-    for label, value in [
-        ("CMC", report_data.cmc),
-        ("Combined Uncertainty (u_c)", report_data.combined_uncertainty),
-        ("Expanded Uncertainty (U)", report_data.expanded_uncertainty),
-        ("Coverage Factor (k)", report_data.k_value),
-        ("Final Applied Uncertainty", report_data.final_applied_uncertainty),
-    ]:
-        write_label_value(current_row, label, value)
         current_row += 1
-
-    current_row += 1
 
     write_section_heading(current_row, "Compliance Statement")
     current_row += 1
