@@ -286,26 +286,30 @@ def get_master_instrument(
         raise HTTPException(status_code=404, detail="Master instrument not found.")
     return record
 
-
 @app.delete("/api/master-instruments/{master_id}")
 def delete_master_instrument(
     master_id: UUID,
     user_id: str = Depends(get_current_user_id),
 ):
-    """Delete a master instrument record.
-
-    Args:
-        master_id: UUID of the master instrument.
-        user_id: UUID of the authenticated user from JWT.
-
-    Returns:
-        dict: Confirmation message.
-    """
-    database.supabase.table("master_instruments").delete().eq(
-        "id", str(master_id)
+    linked = database.supabase.table("calibration_sessions").select("id").eq(
+        "master_instrument_id", str(master_id)
     ).execute()
+    if linked.data:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Cannot delete this master instrument — it is referenced by "
+                f"{len(linked.data)} calibration session(s). Remove or reassign "
+                f"those sessions before deleting the master instrument."
+            ),
+        )
+    try:
+        database.supabase.table("master_instruments").delete().eq(
+            "id", str(master_id)
+        ).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Deletion failed: {e}")
     return {"message": "Master instrument deleted."}
-
 
 # ── Uncertainty Budgets ───────────────────────────────────────────────────────
 
