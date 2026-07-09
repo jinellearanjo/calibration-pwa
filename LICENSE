@@ -1,0 +1,26 @@
+LICENSE - DECISION NEEDED
+==========================
+
+This file is a placeholder, not a real license yet.
+
+Since this project is work product created during a BITS Pilani PS-1
+internship for Instruworks LLC FZ (a private company), the right license
+- if any - depends on facts this file can't assume:
+
+1. Does Instruworks want this code to remain fully proprietary (no public
+   license at all - the default under copyright law if no license is
+   granted)?
+2. Does BITS Pilani's PS-1 program have any IP-ownership terms that apply
+   to work produced during the internship?
+3. Is there any intention to open-source this project later, and if so,
+   under what terms (MIT, Apache 2.0, GPL, etc. all have different
+   implications for who can use/modify/resell the code)?
+
+Adding a permissive open-source license (e.g. MIT) here without answering
+those questions first could give away rights Instruworks may want to keep.
+
+Recommended next step: ask your supervisor (Eng. Charkha) directly whether
+Instruworks wants a specific license here, or whether the repo should
+simply remain unlicensed/proprietary (i.e. delete this file and rely on
+default copyright protection, which is often the right choice for
+internal business tools that were never intended for public release).
