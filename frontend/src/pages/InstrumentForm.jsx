@@ -98,7 +98,7 @@ function InstrumentForm() {
 
       setIsDirty(true);
     }
-    }
+    
 
   const hasErrors = Object.values(errors).some(Boolean);
   const allFilled = [...requiredRef, ...requiredUuc].every(f =>
