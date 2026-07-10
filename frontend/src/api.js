@@ -53,6 +53,30 @@ export async function getInstrument(instrumentId) {
   return request(`/api/instruments/${instrumentId}`);
 }
 
+/**
+ * Delete an instrument, and (when cascade is true) every calibration
+ * session referencing it along with all of that session's nested test
+ * data. Without cascade, the backend returns a 400 if any session still
+ * references this instrument.
+ * @param {string} instrumentId - UUID of the instrument to delete.
+ * @param {boolean} [cascade=true] - Also delete referencing sessions.
+ * @returns {Promise<Object>} Confirmation message.
+ */
+export async function deleteInstrument(instrumentId, cascade = true) {
+  return request(`/api/instruments/${instrumentId}?cascade=${cascade}`, { method: "DELETE" });
+}
+
+/**
+ * Delete a calibration session and all of its nested data (readings,
+ * tests, uncertainty budgets, calibration reference), across every
+ * instrument category. Does not delete the instrument itself.
+ * @param {string} sessionId - UUID of the session to delete.
+ * @returns {Promise<Object>} Confirmation message.
+ */
+export async function deleteSession(sessionId) {
+  return request(`/api/sessions/${sessionId}`, { method: "DELETE" });
+}
+
 // ── Calibration Reference ─────────────────────────────────────────────────────
 
 /**

@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import StatusBadge from "../components/StatusBadge";
 import Spinner from "../components/Spinner";
-import { listSessions } from "../api";
+import { listSessions, deleteInstrument } from "../api";
 
 /**
  * History component.
@@ -70,7 +70,33 @@ function History() {
   const [error, setError] = useState(null);
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
+  const [deletingId, setDeletingId] = useState(null);
   const navigate = useNavigate();
+
+  /**
+   * Deletes the instrument behind a session row, along with that session
+   * and all of its nested test data (cascade=true - see api.js). This is
+   * the app's only instrument-deletion entry point right now: instruments
+   * have no separate list/browse page of their own, and in the normal
+   * flow one instrument maps to exactly one session, so "delete this row"
+   * and "delete this instrument" are the same real action for the user.
+   */
+  async function handleDeleteInstrument(session) {
+    const label = session.instruments?.name || "this instrument";
+    const confirmed = window.confirm(
+      `Delete "${label}" and all of its calibration data? This cannot be undone.`
+    );
+    if (!confirmed) return;
+    setDeletingId(session.id);
+    try {
+      await deleteInstrument(session.instrument_id, true);
+      setSessions(prev => prev.filter(s => s.id !== session.id));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   useEffect(() => {
     listSessions()
@@ -186,6 +212,12 @@ function History() {
                       <div style={{ display: "flex", gap: 8 }}>
                         <ActionButton label="Results" onClick={() => navigate(`/results/${session.id}`)} />
                         <ActionButton label="Report" onClick={() => navigate(`/report/${session.id}`)} />
+                        <ActionButton
+                          label={deletingId === session.id ? "Deleting…" : "Delete"}
+                          danger
+                          disabled={deletingId === session.id}
+                          onClick={() => handleDeleteInstrument(session)}
+                        />
                       </div>
                     </td>
                   </tr>
@@ -216,11 +248,26 @@ function FilterSelect({ label, value, onChange, options }) {
   );
 }
 
-function ActionButton({ label, onClick }) {
+function ActionButton({ label, onClick, danger = false, disabled = false }) {
+  const color = danger ? "var(--color-error, #dc2626)" : "var(--color-primary)";
   return (
-    <button onClick={onClick} style={{ padding: "4px 12px", border: "1px solid var(--color-border)", background: "white", borderRadius: "var(--radius)", fontSize: 12, fontWeight: 500, cursor: "pointer", color: "var(--color-primary)", transition: "border-color 0.15s" }}
-      onMouseEnter={e => e.currentTarget.style.borderColor = "var(--color-primary)"}
-      onMouseLeave={e => e.currentTarget.style.borderColor = "var(--color-border)"}
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        padding: "4px 12px",
+        border: `1px solid ${disabled ? "var(--color-border)" : "var(--color-border)"}`,
+        background: "white",
+        borderRadius: "var(--radius)",
+        fontSize: 12,
+        fontWeight: 500,
+        cursor: disabled ? "not-allowed" : "pointer",
+        color: disabled ? "var(--color-muted)" : color,
+        opacity: disabled ? 0.6 : 1,
+        transition: "border-color 0.15s",
+      }}
+      onMouseEnter={e => { if (!disabled) e.currentTarget.style.borderColor = color; }}
+      onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--color-border)"; }}
     >
       {label}
     </button>
