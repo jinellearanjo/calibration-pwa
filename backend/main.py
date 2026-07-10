@@ -92,6 +92,59 @@ def get_instrument(
     return record
 
 
+@app.delete("/api/instruments/{instrument_id}")
+def delete_instrument(
+    instrument_id: UUID,
+    cascade: bool = False,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Delete an instrument.
+
+    By default, blocks deletion if any calibration session references
+    this instrument - same safety pattern as delete_master_instrument
+    below. Pass ?cascade=true to also delete every referencing session
+    (and all of that session's nested readings/tests/budgets) along with
+    the instrument in one action.
+
+    Args:
+        instrument_id: UUID of the instrument to delete.
+        cascade: If true, also delete every session referencing this
+            instrument (and all of that session's nested data) first.
+        user_id: UUID of the authenticated user from JWT.
+
+    Returns:
+        dict: A confirmation message.
+
+    Raises:
+        HTTPException: 400 if the instrument is referenced by one or more
+            sessions and cascade was not set to true; 500 if any delete
+            query fails.
+    """
+    linked = database.supabase.table("calibration_sessions").select("id").eq(
+        "instrument_id", str(instrument_id)
+    ).execute()
+    if linked.data and not cascade:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Cannot delete this instrument — it is referenced by "
+                f"{len(linked.data)} calibration session(s). Pass "
+                f"?cascade=true to delete those sessions (and all their "
+                f"test data) along with the instrument."
+            ),
+        )
+    try:
+        if cascade:
+            database.delete_instrument_cascade(str(instrument_id))
+        else:
+            database.supabase.table("instruments").delete().eq(
+                "id", str(instrument_id)
+            ).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Deletion failed: {e}")
+    return {"message": "Instrument deleted."}
+
+
 # ── Calibration Sessions ──────────────────────────────────────────────────────
 
 @app.post("/api/sessions")
@@ -157,6 +210,37 @@ def get_session(
     if not record:
         raise HTTPException(status_code=404, detail="Session not found.")
     return record
+
+
+@app.delete("/api/sessions/{session_id}")
+def delete_session(
+    session_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Delete a calibration session and all of its nested data (readings,
+    tests, uncertainty budgets, calibration reference) across every
+    instrument category, via database.delete_calibration_session_cascade.
+
+    Does NOT delete the instrument itself - the underlying instrument
+    registration may still be worth keeping even if this particular test
+    attempt is being discarded. Use DELETE /api/instruments/{id}?cascade=true
+    to remove the instrument along with all of its sessions in one action.
+
+    Args:
+        session_id: UUID of the session to delete.
+        user_id: UUID of the authenticated user from JWT.
+
+    Returns:
+        dict: A confirmation message.
+
+    Raises:
+        HTTPException: 500 if any delete query fails.
+    """
+    try:
+        database.delete_calibration_session_cascade(str(session_id))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Deletion failed: {e}")
+    return {"message": "Session and all associated test data deleted."}
 
 
 # ── Calibration Reference ─────────────────────────────────────────────────────

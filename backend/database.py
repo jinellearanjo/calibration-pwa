@@ -203,6 +203,98 @@ def insert_uncertainty_budget(budget: dict) -> dict:
     return response.data
 
 
+def delete_calibration_session_cascade(session_id: str) -> None:
+    """Delete a calibration session and every row across every instrument
+    category that depends on it, in dependency order (child rows before
+    parent rows, so a foreign key never blocks a later delete in this
+    same function).
+
+    This does NOT rely on the database having ON DELETE CASCADE set up
+    correctly on every table - electrical_tests/electrical_readings and
+    uncertainty_budgets.temperature_test_id/electrical_test_id do have
+    CASCADE defined in migrations/2026-07-08_electrical_and_multi_budget_
+    support.sql, but the original tables (readings, weighing_*,
+    temperature_repeatability_tests, calibration_reference,
+    uncertainty_budgets.session_id itself) were created directly in the
+    Supabase table editor before this repo's migrations folder existed,
+    so their cascade behavior was never confirmed in code. Every table is
+    deleted explicitly here regardless - deleting rows that a DB-level
+    cascade already removed is a harmless no-op, so this is safe either way.
+
+    Args:
+        session_id: The UUID of the calibration session to delete, along
+            with all of its nested test data.
+
+    Raises:
+        Exception: If any individual delete query fails.
+    """
+    # Weighing: readings key off test_id, so must be deleted before their
+    # parent test rows.
+    weighing_tests = (
+        supabase.table("weighing_repeatability_tests")
+        .select("id").eq("session_id", session_id).execute().data
+    )
+    for t in weighing_tests:
+        supabase.table("weighing_repeatability_readings").delete().eq("test_id", t["id"]).execute()
+    supabase.table("weighing_repeatability_tests").delete().eq("session_id", session_id).execute()
+    supabase.table("weighing_off_center_readings").delete().eq("session_id", session_id).execute()
+    supabase.table("weighing_hysteresis_readings").delete().eq("session_id", session_id).execute()
+
+    # Temperature: same test_id-before-parent order as Weighing.
+    temperature_tests = (
+        supabase.table("temperature_repeatability_tests")
+        .select("id").eq("session_id", session_id).execute().data
+    )
+    for t in temperature_tests:
+        supabase.table("temperature_repeatability_readings").delete().eq("test_id", t["id"]).execute()
+    supabase.table("temperature_repeatability_tests").delete().eq("session_id", session_id).execute()
+
+    # Electrical: same shape again.
+    electrical_tests = (
+        supabase.table("electrical_tests")
+        .select("id").eq("session_id", session_id).execute().data
+    )
+    for t in electrical_tests:
+        supabase.table("electrical_readings").delete().eq("test_id", t["id"]).execute()
+    supabase.table("electrical_tests").delete().eq("session_id", session_id).execute()
+
+    # Pressure's generic readings table.
+    supabase.table("readings").delete().eq("session_id", session_id).execute()
+
+    # Uncertainty budgets (covers Pressure/Weighing's single row per
+    # session as well as any Temperature/Electrical rows not already
+    # removed via their test_id's cascade above).
+    supabase.table("uncertainty_budgets").delete().eq("session_id", session_id).execute()
+
+    # Calibration reference (certificate number, customer details, etc.)
+    supabase.table("calibration_reference").delete().eq("session_id", session_id).execute()
+
+    # Finally the session row itself.
+    supabase.table("calibration_sessions").delete().eq("id", session_id).execute()
+
+
+def delete_instrument_cascade(instrument_id: str) -> None:
+    """Delete an instrument and every calibration session that references
+    it (each fully cascaded via delete_calibration_session_cascade), then
+    the instrument row itself.
+
+    Args:
+        instrument_id: The UUID of the instrument to delete, along with
+            every session (and that session's nested test data) that
+            references it.
+
+    Raises:
+        Exception: If any individual delete query fails.
+    """
+    sessions = (
+        supabase.table("calibration_sessions")
+        .select("id").eq("instrument_id", instrument_id).execute().data
+    )
+    for s in sessions:
+        delete_calibration_session_cascade(s["id"])
+    supabase.table("instruments").delete().eq("id", instrument_id).execute()
+
+
 def delete_uncertainty_budgets(session_id: str) -> None:
     """Delete all uncertainty budget rows for a session.
 
