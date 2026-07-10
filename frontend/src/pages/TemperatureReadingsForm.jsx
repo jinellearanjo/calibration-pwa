@@ -20,15 +20,11 @@ import {
  * scope, so setpoints are added/removed dynamically rather than being
  * a fixed list.
  *
- * IMPORTANT LIMITATION: formula_manager.py's _build_temperature_budget
- * deliberately raises a ValueError if more than one setpoint's worth of
- * repeatability data exists for a session - it has no way to know which
- * setpoint to calculate a budget for, and fails loudly rather than
- * silently picking one. This form still allows saving multiple setpoints
- * (they're all needed on the certificate's readings table), but shows a
- * warning once a second setpoint is added, since calculation will fail
- * until multi-setpoint budgets are supported (one row per setpoint in
- * uncertainty_budgets, which doesn't exist yet).
+ * Each setpoint gets its own uncertainty_budgets row (via
+ * uncertainty_budgets.temperature_test_id) - formula_manager.py's
+ * _build_temperature_budgets (plural) loops over every setpoint's test
+ * data and returns one budget per setpoint, so there's no limit on how
+ * many setpoints a session can have.
  *
  * Reachable two ways, same pattern as ReadingsForm.jsx:
  *  - Directly with :sessionId already in the URL (/readings/temperature/:sessionId)
