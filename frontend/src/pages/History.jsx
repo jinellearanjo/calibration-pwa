@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import * as XLSX from "xlsx";
 import Navbar from "../components/Navbar";
 import StatusBadge from "../components/StatusBadge";
 import Spinner from "../components/Spinner";
@@ -8,58 +9,8 @@ import { listSessions, deleteInstrument } from "../api";
 /**
  * History component.
  * Displays a table of all calibration sessions for the current user, with
- * category/status filtering and CSV export.
+ * category/status filtering and Excel export (auto-fitted column widths).
  */
-
-/**
- * Escapes a single CSV field: wraps in double quotes and doubles any
- * internal quotes if the value contains a comma, quote, or newline.
- * @param {*} value - Raw cell value (stringified via String()).
- * @returns {string} A CSV-safe field.
- */
-function csvEscape(value) {
-  const str = value === null || value === undefined ? "" : String(value);
-  if (/[",\n]/.test(str)) {
-    return `"${str.replace(/"/g, '""')}"`;
-  }
-  return str;
-}
-
-/**
- * Builds a CSV string (with header row) from a list of sessions.
- * Columns: Session ID, Instrument Name, Category, Status, Date.
- * @param {Array<Object>} sessions - Session records to export.
- * @returns {string} CSV text, CRLF line endings per RFC 4180.
- */
-function sessionsToCsv(sessions) {
-  const header = ["Session ID", "Instrument Name", "Category", "Status", "Date"];
-  const rows = sessions.map(session => [
-    session.id || "",
-    session.instruments?.name || "",
-    session.instruments?.type || "",
-    session.status || "PENDING",
-    session.date || "",
-  ]);
-  return [header, ...rows].map(row => row.map(csvEscape).join(",")).join("\r\n");
-}
-
-/**
- * Triggers a browser download of the given text as a named file.
- * @param {string} filename - Name for the downloaded file.
- * @param {string} text - File contents.
- * @param {string} mimeType - MIME type for the Blob.
- */
-function downloadTextFile(filename, text, mimeType) {
-  const blob = new Blob([text], { type: mimeType });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-}
 
 const CATEGORY_OPTIONS = ["All", "Pressure", "Weighing", "Temperature", "Electrical"];
 const STATUS_OPTIONS = ["All", "ACCEPTED", "REVIEW REQUIRED", "REJECTED", "PENDING"];
@@ -124,10 +75,32 @@ function History() {
     return categoryMatches && statusMatches;
   });
 
-  const handleDownloadCsv = () => {
-    const csv = sessionsToCsv(filteredSessions);
+  const handleDownloadXlsx = () => {
+    const rows = filteredSessions.map(session => ({
+      "Session ID": session.id || "",
+      "Instrument Name": session.instruments?.name || "",
+      "Category": session.instruments?.type || "",
+      "Status": session.status || "PENDING",
+      "Date": session.date || "",
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+
+    // Auto-fit column widths: measure max content length per column,
+    // add padding, cap at 60 so no column becomes absurdly wide.
+    const headers = Object.keys(rows[0] || {});
+    ws["!cols"] = headers.map(header => ({
+      wch: Math.min(
+        Math.max(header.length, ...rows.map(r => String(r[header] || "").length)) + 4,
+        60
+      ),
+    }));
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Sessions");
+
     const stamp = new Date().toISOString().slice(0, 10);
-    downloadTextFile(`calibration-sessions-${stamp}.csv`, csv, "text/csv;charset=utf-8;");
+    XLSX.writeFile(wb, `calibration-sessions-${stamp}.xlsx`);
   };
 
   return (
@@ -161,13 +134,13 @@ function History() {
               options={STATUS_OPTIONS}
             />
             <button
-              onClick={handleDownloadCsv}
+              onClick={handleDownloadXlsx}
               disabled={filteredSessions.length === 0}
               style={{ padding: "9px 16px", background: "white", color: "var(--color-primary)", border: "1px solid var(--color-border)", borderRadius: "var(--radius)", fontSize: 13, fontWeight: 500, cursor: filteredSessions.length === 0 ? "not-allowed" : "pointer" }}
               onMouseEnter={e => { if (filteredSessions.length > 0) e.currentTarget.style.borderColor = "var(--color-primary)"; }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--color-border)"; }}
             >
-              Download as CSV
+              Download as Excel
             </button>
           </div>
         )}
@@ -203,7 +176,7 @@ function History() {
                     <td style={tdStyle}>{session.technician || "—"}</td>
                     {/* Was session.status || "—": showed a bare dash for a
                         session with no status, while the filter dropdown
-                        and CSV export both treat that same missing status
+                        and xlsx export both treat that same missing status
                         as "PENDING" - meaning a session could be invisible
                         under the "PENDING" filter while displaying "—" in
                         this table. Matched to "PENDING" for consistency. */}
