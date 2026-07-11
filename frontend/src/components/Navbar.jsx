@@ -18,6 +18,7 @@ function Navbar() {
   const navLinks = [
     { label: "Dashboard", path: "/dashboard" },
     { label: "History", path: "/history" },
+    { label: "Edit Session", path: "/edit-session" },
   ];
 
   return (

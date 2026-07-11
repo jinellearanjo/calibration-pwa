@@ -1,20 +1,41 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import Navbar from "../components/Navbar";
+import Spinner from "../components/Spinner";
 import { useUnsavedWarning } from "../hooks/useUnsavedWarning";
-import { createInstrument } from "../api";
+import { decimalInputHandler } from "../utils/numericInput";
+import {
+  createInstrument,
+  updateInstrument,
+  getInstrument,
+  updateCalibrationReference,
+  createCalibrationReference,
+  getCalibrationReferenceBySession,
+} from "../api";
 
 /**
  * InstrumentForm component.
- * Two-section form for registering a new instrument under calibration.
+ * Two-section form for registering a new instrument under calibration,
+ * or editing an existing one (editMode via location.state).
+ *
+ * Edit mode: pre-fills both sections from existing DB records, submits
+ * via PUT instead of POST, then navigates to SessionForm in edit mode
+ * carrying sessionId through.
+ *
  * Section 1: Calibration Reference Details.
  * Section 2: Unit Under Calibration (UUC) fields.
- * Submits data to the backend via api.js functions.
  */
 function InstrumentForm() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { setIsDirty, safeNavigate } = useUnsavedWarning();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loadingEdit, setLoadingEdit] = useState(false);
+
+  // Edit mode fields from navigation state
+  const editMode = location.state?.editMode || false;
+  const editSessionId = location.state?.sessionId || null;
+  const editInstrumentId = location.state?.instrumentId || null;
 
   const [refData, setRefData] = useState({
     certificate_number: "",
@@ -48,6 +69,70 @@ function InstrumentForm() {
 
   const [errors, setErrors] = useState({});
 
+  // Pre-fill from existing records when in edit mode
+  useEffect(() => {
+    if (!editMode || !editInstrumentId) return;
+    setLoadingEdit(true);
+
+    async function loadEditData() {
+      try {
+        const instrument = await getInstrument(editInstrumentId);
+        if (instrument) {
+          setUucData({
+            name: instrument.name || "",
+            type: instrument.type || "",
+            instrument_subtype: instrument.instrument_subtype || "",
+            make: instrument.make || "",
+            model: instrument.model || "",
+            serial_number: instrument.serial_number || "",
+            accuracy_class: String(instrument.accuracy_class ?? ""),
+            resolution: String(instrument.resolution ?? ""),
+            unit: instrument.unit || "",
+            range_min: String(instrument.range_min ?? ""),
+            range_max: String(instrument.range_max ?? ""),
+            tag_number: instrument.tag_number || "",
+            calibration_carried_at: instrument.calibration_carried_at || "",
+            dial_size: instrument.dial_size || "",
+            mounting_orientation: instrument.mounting_orientation || "",
+            instrument_location: instrument.instrument_location || "",
+            medium_used: instrument.medium_used || "",
+          });
+        }
+
+        // Fetch calibration reference for this session, if one exists yet
+        // (routed through api.js's request() helper, same auth-token
+        // handling as every other call in this app - no need to hand-roll
+        // a fetch + Supabase session lookup here).
+        if (editSessionId) {
+          try {
+            const ref = await getCalibrationReferenceBySession(editSessionId);
+            if (ref) {
+              setRefData({
+                certificate_number: ref.certificate_number || "",
+                date_of_calibration: ref.date_of_calibration || "",
+                cal_due_date: ref.cal_due_date || "",
+                item_received_date: ref.item_received_date || "",
+                date_of_issue: ref.date_of_issue || "",
+                customer_name: ref.customer_name || "",
+                customer_address: ref.customer_address || "",
+              });
+            }
+          } catch {
+            // No calibration reference exists yet for this session (404) -
+            // non-fatal, the form just stays empty for Section 1 and the
+            // user fills it in fresh.
+          }
+        }
+      } catch (e) {
+        // Non-fatal: form stays empty and user can fill manually
+      } finally {
+        setLoadingEdit(false);
+      }
+    }
+
+    loadEditData();
+  }, [editMode, editInstrumentId, editSessionId]);
+
   const requiredRef = ["certificate_number", "date_of_calibration", "cal_due_date", "item_received_date", "date_of_issue", "customer_name", "customer_address"];
   const requiredUuc = ["name", "type", "make", "model", "serial_number", "accuracy_class", "resolution", "unit", "range_min", "range_max"];
 
@@ -74,31 +159,26 @@ function InstrumentForm() {
   }
 
   function updateUuc(field, value) {
-      setUucData(prev => {
-        const nextData = { ...prev, [field]: value };
-        
-        // If the instrument category type changes, reset the chosen unit
-        if (field === "type") {
-          nextData.unit = "";
-        }
-        
-        return nextData;
-      });
+    setUucData(prev => {
+      const nextData = { ...prev, [field]: value };
+      // If the instrument category type changes, reset the chosen unit
+      if (field === "type") {
+        nextData.unit = "";
+      }
+      return nextData;
+    });
 
-      setErrors(prev => {
-        const nextErrors = { ...prev, [field]: validate(field, value) };
-        
-        // If type changed, clear out any old validation errors for the unit field
-        if (field === "type") {
-          nextErrors.unit = "";
-        }
-        
-        return nextErrors;
-      });
+    setErrors(prev => {
+      const nextErrors = { ...prev, [field]: validate(field, value) };
+      // If type changed, clear out any old validation errors for the unit field
+      if (field === "type") {
+        nextErrors.unit = "";
+      }
+      return nextErrors;
+    });
 
-      setIsDirty(true);
-    }
-    
+    setIsDirty(true);
+  }
 
   const hasErrors = Object.values(errors).some(Boolean);
   const allFilled = [...requiredRef, ...requiredUuc].every(f =>
@@ -115,16 +195,36 @@ function InstrumentForm() {
 
     setIsSubmitting(true);
     try {
-      // Create the instrument now. refData (certificate number, customer
-      // details, etc.) can't be submitted yet - calibration_reference
-      // requires a session_id, and no session exists until SessionForm's
-      // own submit. Carry refData forward via navigation state; SessionForm
-      // submits it once the new session's id is available.
-      const created = await createInstrument(uucData);
-      const newInstrumentId = created?.[0]?.id;
+      let instrumentId;
+
+      if (editMode) {
+        // Update existing instrument
+        await updateInstrument(editInstrumentId, uucData);
+        instrumentId = editInstrumentId;
+        // Update or create calibration reference
+        try {
+          await updateCalibrationReference(editSessionId, { ...refData, session_id: editSessionId });
+        } catch {
+          await createCalibrationReference({ ...refData, session_id: editSessionId });
+        }
+      } else {
+        // Create the instrument now. refData (certificate number, customer
+        // details, etc.) can't be submitted yet - calibration_reference
+        // requires a session_id, and no session exists until SessionForm's
+        // own submit. Carry refData forward via navigation state; SessionForm
+        // submits it once the new session's id is available.
+        const created = await createInstrument(uucData);
+        instrumentId = created?.[0]?.id;
+      }
+
       setIsDirty(false);
       navigate("/session", {
-        state: { instrumentId: newInstrumentId, instrumentType: uucData.type, calibrationReference: refData },
+        state: {
+          instrumentId,
+          instrumentType: uucData.type,
+          calibrationReference: refData,
+          ...(editMode ? { editMode: true, sessionId: editSessionId } : {}),
+        },
       });
     } catch (err) {
       setErrors(prev => ({ ...prev, submit: err.message }));
@@ -133,6 +233,8 @@ function InstrumentForm() {
     }
   }
 
+  if (loadingEdit) return <Spinner message="Loading session data..." />;
+
   return (
     <div style={{ minHeight: "100vh", background: "var(--color-bg)" }}>
       <Navbar />
@@ -140,13 +242,15 @@ function InstrumentForm() {
 
         <div style={{ marginBottom: 32 }}>
           <p style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--color-accent)", marginBottom: 8 }}>
-            Step 01
+            {editMode ? "Edit" : "Step 01"}
           </p>
           <h1 style={{ fontSize: 26, fontWeight: 700, color: "var(--color-primary)", marginBottom: 8 }}>
-            Register Instrument
+            {editMode ? "Edit Instrument Details" : "Register Instrument"}
           </h1>
           <p style={{ color: "var(--color-muted)", fontSize: 14 }}>
-            Enter calibration reference details and instrument under calibration fields.
+            {editMode
+              ? "Update calibration reference details and instrument under calibration fields."
+              : "Enter calibration reference details and instrument under calibration fields."}
           </p>
         </div>
 
@@ -185,19 +289,19 @@ function InstrumentForm() {
             <Field label="Serial Number" id="serial_number" value={uucData.serial_number} onChange={v => updateUuc("serial_number", v)} error={errors.serial_number} />
             <Field label="Accuracy Class" id="accuracy_class" type="number" value={uucData.accuracy_class} onChange={v => updateUuc("accuracy_class", v)} error={errors.accuracy_class} />
             <Field label="Resolution" id="resolution" type="number" value={uucData.resolution} onChange={v => updateUuc("resolution", v)} error={errors.resolution} />
-            <SelectField 
-              label="Unit" 
-              id="unit" 
-              value={uucData.unit} 
-              onChange={v => updateUuc("unit", v)} 
-              error={errors.unit} 
+            <SelectField
+              label="Unit"
+              id="unit"
+              value={uucData.unit}
+              onChange={v => updateUuc("unit", v)}
+              error={errors.unit}
               options={
                 uucData.type === "Pressure" ? ["bar", "psi", "kPa", "MPa", "mbar"] :
                 uucData.type === "Temperature" ? ["°C"] :
                 uucData.type === "Weighing" ? ["g", "kg", "mg"] :
-                uucData.type === "Electrical" ? ["V", "mV", "A", "mA", "\u00B5A", "\u2126", "k\u2126", "M\u2126", "G\u2126", "Hz", "kHz", "MHz"] : 
+                uucData.type === "Electrical" ? ["V", "mV", "A", "mA", "\u00B5A", "\u2126", "k\u2126", "M\u2126", "G\u2126", "Hz", "kHz", "MHz"] :
                 []
-              } 
+              }
             />
             <Field label="Range Min" id="range_min" type="number" value={uucData.range_min} onChange={v => updateUuc("range_min", v)} error={errors.range_min} />
             <Field label="Range Max" id="range_max" type="number" value={uucData.range_max} onChange={v => updateUuc("range_max", v)} error={errors.range_max} />
@@ -228,10 +332,10 @@ function InstrumentForm() {
               cursor: hasErrors || !allFilled || isSubmitting ? "not-allowed" : "pointer",
             }}
           >
-            {isSubmitting ? "Registering..." : "Register Instrument"}
+            {isSubmitting ? "Saving..." : editMode ? "Save Changes" : "Register Instrument"}
           </button>
           <button
-            onClick={() => safeNavigate("/dashboard")}
+            onClick={() => safeNavigate(editMode ? "/edit-session" : "/dashboard")}
             style={{ padding: "11px 20px", background: "white", color: "var(--color-text)", border: "1px solid var(--color-border)", borderRadius: "var(--radius)", fontSize: 14, fontWeight: 500, cursor: "pointer" }}
           >
             Cancel
@@ -252,10 +356,18 @@ function SectionHeading({ step, title }) {
 }
 
 function Field({ label, id, value, onChange, error, type = "text" }) {
+  const isNumeric = type === "number";
   return (
     <div style={{ marginBottom: 20 }}>
       <label htmlFor={id} style={{ display: "block", fontSize: 13, fontWeight: 500, marginBottom: 6, color: "var(--color-text)" }}>{label}</label>
-      <input id={id} type={type} value={value} onChange={e => onChange(e.target.value)} style={{ borderColor: error ? "var(--color-error)" : undefined }} />
+      <input
+        id={id}
+        type={isNumeric ? "text" : type}
+        inputMode={isNumeric ? "decimal" : undefined}
+        value={value}
+        onChange={isNumeric ? decimalInputHandler(onChange) : (e => onChange(e.target.value))}
+        style={{ borderColor: error ? "var(--color-error)" : undefined }}
+      />
       {error && <span style={{ color: "var(--color-error)", fontSize: 12, marginTop: 4, display: "block" }}>{error}</span>}
     </div>
   );

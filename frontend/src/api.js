@@ -88,6 +88,36 @@ export async function createCalibrationReference(data) {
   return request("/api/calibration-reference", { method: "POST", body: JSON.stringify(data) });
 }
 
+/**
+ * Update an existing calibration reference record.
+ * @param {string} sessionId - UUID of the session the reference belongs to.
+ * @param {Object} data - Updated calibration reference fields.
+ * @returns {Promise<Object>} The updated calibration reference record.
+ */
+export async function updateCalibrationReference(sessionId, data) {
+  return request(`/api/calibration-reference/${sessionId}`, { method: "PUT", body: JSON.stringify(data) });
+}
+
+/**
+ * Fetch the calibration reference record for a session (used to pre-fill
+ * InstrumentForm's Section 1 in edit mode).
+ * @param {string} sessionId - UUID of the session.
+ * @returns {Promise<Object>} The calibration reference record.
+ */
+export async function getCalibrationReferenceBySession(sessionId) {
+  return request(`/api/calibration-reference-by-session/${sessionId}`);
+}
+
+/**
+ * Update an existing instrument record.
+ * @param {string} instrumentId - UUID of the instrument.
+ * @param {Object} data - Updated instrument fields.
+ * @returns {Promise<Object>} The updated instrument record.
+ */
+export async function updateInstrument(instrumentId, data) {
+  return request(`/api/instruments/${instrumentId}`, { method: "PUT", body: JSON.stringify(data) });
+}
+
 // ── Sessions ──────────────────────────────────────────────────────────────────
 
 /**
@@ -114,6 +144,16 @@ export async function listSessions() {
  */
 export async function getSession(sessionId) {
   return request(`/api/sessions/${sessionId}`);
+}
+
+/**
+ * Update an existing calibration session record.
+ * @param {string} sessionId - UUID of the session.
+ * @param {Object} data - Updated session fields.
+ * @returns {Promise<Object>} The updated session record.
+ */
+export async function updateSession(sessionId, data) {
+  return request(`/api/sessions/${sessionId}`, { method: "PUT", body: JSON.stringify(data) });
 }
 
 // ── Readings ──────────────────────────────────────────────────────────────────

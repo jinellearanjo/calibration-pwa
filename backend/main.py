@@ -63,7 +63,7 @@ def create_instrument(
     Returns:
         dict: The created instrument record.
     """
-    data = payload.dict()
+    data = payload.model_dump()
     data["user_id"] = user_id
     response = database.supabase.table("instruments").insert(data).execute()
     return response.data
@@ -145,6 +145,48 @@ def delete_instrument(
     return {"message": "Instrument deleted."}
 
 
+@app.put("/api/instruments/{instrument_id}")
+def update_instrument(
+    instrument_id: UUID,
+    payload: InstrumentCreate,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Update an existing instrument record.
+
+    Reuses InstrumentCreate (same shape as the create payload) rather than
+    a separate partial-update model - matches the frontend's edit form,
+    which pre-fills every field and resubmits the whole record, same
+    pattern as update_session/update_calibration_reference below.
+
+    Args:
+        instrument_id: UUID of the instrument to update.
+        payload: Updated instrument fields from the request body.
+        user_id: UUID of the authenticated user from JWT.
+
+    Returns:
+        dict: The updated instrument record.
+
+    Raises:
+        HTTPException: 404 if the instrument is not found.
+        HTTPException: 500 if the update query fails.
+    """
+    existing = database.get_instrument(str(instrument_id))
+    if not existing:
+        raise HTTPException(status_code=404, detail="Instrument not found.")
+    data = payload.model_dump()
+    try:
+        response = database.supabase.table("instruments").update(data).eq(
+            "id", str(instrument_id)
+        ).execute()
+        if not response.data:
+            raise HTTPException(status_code=500, detail="Update returned no data.")
+        return response.data[0]
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Update failed: {e}")
+
+
 # ── Calibration Sessions ──────────────────────────────────────────────────────
 
 @app.post("/api/sessions")
@@ -161,7 +203,7 @@ def create_session(
     Returns:
         dict: The created session record.
     """
-    data = payload.dict()
+    data = payload.model_dump()
     data["user_id"] = user_id
     data["status"] = "PENDING"
     # Convert date and UUID fields to strings for Supabase.
@@ -243,6 +285,60 @@ def delete_session(
     return {"message": "Session and all associated test data deleted."}
 
 
+@app.put("/api/sessions/{session_id}")
+def update_session(
+    session_id: UUID,
+    payload: CalibrationSessionCreate,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Update an existing calibration session record.
+
+    Only updates the session metadata (date, technician, environmental
+    conditions, master_instrument_id). Does not touch readings, budgets,
+    or validation status - those have their own endpoints.
+
+    Note: editing temperature_c/humidity_pct after a budget has already
+    been calculated does not invalidate or recalculate that budget -
+    Pressure's u_temp component is derived from these values at
+    calculate time, not re-derived on session edit. If environmental
+    conditions are corrected after calculation, the session should be
+    recalculated to keep the budget consistent - not automated here since
+    silently recalculating could overwrite a result someone is actively
+    reviewing.
+
+    Args:
+        session_id: UUID of the session to update.
+        payload: Updated session fields from the request body.
+        user_id: UUID of the authenticated user from JWT.
+
+    Returns:
+        dict: The updated session record.
+
+    Raises:
+        HTTPException: 404 if the session is not found.
+        HTTPException: 500 if the update query fails.
+    """
+    existing = database.get_session(str(session_id))
+    if not existing:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    data = payload.model_dump()
+    data["instrument_id"] = str(data["instrument_id"])
+    data["date"] = str(data["date"])
+    if data.get("master_instrument_id") is not None:
+        data["master_instrument_id"] = str(data["master_instrument_id"])
+    try:
+        response = database.supabase.table("calibration_sessions").update(data).eq(
+            "id", str(session_id)
+        ).execute()
+        if not response.data:
+            raise HTTPException(status_code=500, detail="Update returned no data.")
+        return response.data[0]
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Update failed: {e}")
+
+
 # ── Calibration Reference ─────────────────────────────────────────────────────
 
 @app.post("/api/calibration-reference")
@@ -259,12 +355,86 @@ def create_calibration_reference(
     Returns:
         dict: The created calibration reference record.
     """
-    data = payload.dict()
+    data = payload.model_dump()
     data["session_id"] = str(data["session_id"])
     for date_field in ["date_of_calibration", "cal_due_date", "item_received_date", "date_of_issue"]:
         data[date_field] = str(data[date_field])
     response = database.supabase.table("calibration_reference").insert(data).execute()
     return response.data
+
+
+@app.put("/api/calibration-reference/{session_id}")
+def update_calibration_reference(
+    session_id: UUID,
+    payload: CalibrationReferenceCreate,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Update an existing calibration reference record for a session.
+
+    Args:
+        session_id: UUID of the session whose calibration reference
+            should be updated.
+        payload: Updated calibration reference fields from the request body.
+        user_id: UUID of the authenticated user from JWT.
+
+    Returns:
+        dict: The updated calibration reference record.
+
+    Raises:
+        HTTPException: 404 if no calibration reference exists for this session.
+        HTTPException: 500 if the update query fails.
+    """
+    existing = database.get_calibration_reference(str(session_id))
+    if not existing:
+        raise HTTPException(
+            status_code=404,
+            detail="No calibration reference found for this session."
+        )
+    data = payload.model_dump()
+    data["session_id"] = str(data["session_id"])
+    for date_field in ["date_of_calibration", "cal_due_date", "item_received_date", "date_of_issue"]:
+        data[date_field] = str(data[date_field])
+    try:
+        response = database.supabase.table("calibration_reference").update(data).eq(
+            "session_id", str(session_id)
+        ).execute()
+        if not response.data:
+            raise HTTPException(status_code=500, detail="Update returned no data.")
+        return response.data[0]
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Update failed: {e}")
+
+
+@app.get("/api/calibration-reference-by-session/{session_id}")
+def get_calibration_reference_by_session(
+    session_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Fetch the calibration reference record for a session (used by
+    InstrumentForm.jsx's edit mode to pre-fill Section 1).
+
+    Args:
+        session_id: UUID of the session.
+        user_id: UUID of the authenticated user from JWT.
+
+    Returns:
+        dict: The calibration reference record.
+
+    Raises:
+        HTTPException: 404 if no calibration reference exists for this session -
+            expected and non-fatal on the frontend for a session that was
+            created but never had Section 1 (certificate/customer details)
+            filled in yet.
+    """
+    record = database.get_calibration_reference(str(session_id))
+    if not record:
+        raise HTTPException(
+            status_code=404,
+            detail="No calibration reference found for this session."
+        )
+    return record
 
 
 # ── Readings ──────────────────────────────────────────────────────────────────
@@ -286,7 +456,7 @@ def create_reading(
     Returns:
         dict: The created reading record.
     """
-    data = payload.dict()
+    data = payload.model_dump()
     data["session_id"] = str(data["session_id"])
     response = database.supabase.table("readings").insert(data).execute()
     return response.data
@@ -325,7 +495,7 @@ def create_master_instrument(
     Returns:
         dict: The created master instrument record.
     """
-    data = payload.dict()
+    data = payload.model_dump()
     data["user_id"] = user_id
     data["cal_due_date"] = str(data["cal_due_date"])
     response = database.supabase.table("master_instruments").insert(data).execute()
@@ -413,7 +583,7 @@ def create_uncertainty_budget(
     Returns:
         dict: The created uncertainty budget record.
     """
-    data = payload.dict()
+    data = payload.model_dump()
     data["session_id"] = str(session_id)
     return database.insert_uncertainty_budget(data)
 
@@ -526,7 +696,7 @@ def create_weighing_repeatability_test(
             detail=f"Repeatability test requires exactly 10 readings, got {len(readings)}.",
         )
 
-    test_data = payload.dict()
+    test_data = payload.model_dump()
     test_data["session_id"] = str(session_id)
     test_record = database.insert_weighing_repeatability_test(test_data)
     # Guards against an empty insert response (e.g. an RLS SELECT policy
@@ -543,7 +713,7 @@ def create_weighing_repeatability_test(
 
     reading_rows = []
     for r in readings:
-        row = r.dict()
+        row = r.model_dump()
         row["test_id"] = test_id
         reading_rows.append(row)
     reading_records = database.insert_weighing_repeatability_readings(reading_rows)
@@ -597,7 +767,7 @@ def create_weighing_off_center_readings(
 
     rows = []
     for r in readings:
-        row = r.dict()
+        row = r.model_dump()
         row["session_id"] = str(session_id)
         rows.append(row)
     return database.insert_weighing_off_center_readings(rows)
@@ -649,7 +819,7 @@ def create_weighing_hysteresis_readings(
 
     rows = []
     for r in readings:
-        row = r.dict()
+        row = r.model_dump()
         row["session_id"] = str(session_id)
         rows.append(row)
     return database.insert_weighing_hysteresis_readings(rows)
@@ -705,7 +875,7 @@ def create_temperature_repeatability_test(
             detail=f"Repeatability test requires exactly 3 readings, got {len(readings)}.",
         )
 
-    test_data = payload.dict()
+    test_data = payload.model_dump()
     test_data["session_id"] = str(session_id)
     test_record = database.insert_temperature_repeatability_test(test_data)
     # See the identical guard in create_weighing_repeatability_test above
@@ -719,7 +889,7 @@ def create_temperature_repeatability_test(
 
     reading_rows = []
     for r in readings:
-        row = r.dict()
+        row = r.model_dump()
         row["test_id"] = test_id
         reading_rows.append(row)
     reading_records = database.insert_temperature_repeatability_readings(reading_rows)
@@ -776,7 +946,7 @@ def create_electrical_test(
             detail="An Electrical test requires at least one reading.",
         )
 
-    test_data = payload.dict()
+    test_data = payload.model_dump()
     test_data["session_id"] = str(session_id)
     test_record = database.insert_electrical_test(test_data)
     # See the identical guard in create_weighing_repeatability_test above
@@ -790,7 +960,7 @@ def create_electrical_test(
 
     reading_rows = []
     for r in readings:
-        row = r.dict()
+        row = r.model_dump()
         row["test_id"] = test_id
         reading_rows.append(row)
     reading_records = database.insert_electrical_readings(reading_rows)

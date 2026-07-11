@@ -14,6 +14,7 @@ import CalculationView from "./pages/CalculationView";
 import ResultsView from "./pages/ResultsView";
 import ReportPage from "./pages/ReportPage";
 import History from "./pages/History";
+import EditSession from "./pages/EditSession";
 import NotFound from "./pages/NotFound";
 
 function App() {
@@ -39,6 +40,7 @@ function App() {
         <Route path="/report" element={<ProtectedRoute><ReportPage /></ProtectedRoute>} />
         <Route path="/report/:sessionId" element={<ProtectedRoute><ReportPage /></ProtectedRoute>} />
         <Route path="/history" element={<ProtectedRoute><History /></ProtectedRoute>} />
+        <Route path="/edit-session" element={<ProtectedRoute><EditSession /></ProtectedRoute>} />
         <Route path="/" element={<Splash />} />
         <Route path="*" element={<NotFound />} />
       </Routes>

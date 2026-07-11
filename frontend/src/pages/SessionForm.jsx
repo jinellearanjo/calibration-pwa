@@ -2,13 +2,16 @@ import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import { useUnsavedWarning } from "../hooks/useUnsavedWarning";
-import { createSession, createCalibrationReference, listMasterInstruments, getInstrument } from "../api";
+import { decimalInputHandler } from "../utils/numericInput";
+import { createSession, updateSession, createCalibrationReference, updateCalibrationReference, listMasterInstruments, getInstrument, getSession } from "../api";
 
 /**
  * SessionForm component.
- * Allows the user to create a new calibration session by entering
- * the date, technician name, and environmental conditions.
- * Submits data to the backend via createSession from api.js.
+ * Creates a new calibration session, or edits an existing one (editMode).
+ *
+ * Edit mode: pre-fills from existing session record via getSession,
+ * submits via PUT instead of POST, then routes to the appropriate
+ * readings form for the instrument type.
  */
 function SessionForm() {
   const navigate = useNavigate();
@@ -23,6 +26,8 @@ function SessionForm() {
   const passedInstrumentId = location.state?.instrumentId;
   const passedInstrumentType = location.state?.instrumentType;
   const passedCalibrationReference = location.state?.calibrationReference;
+  const editMode = location.state?.editMode || false;
+  const editSessionId = location.state?.sessionId || null;
 
   const [formData, setFormData] = useState({
     instrument_id: passedInstrumentId || "",
@@ -40,10 +45,26 @@ function SessionForm() {
 
   // master_instrument_id is intentionally not in requiredFields: some
   // historical sessions predate this field, and not every calibration type
-  // may have a master instrument recorded yet. Fill it in when known so
-  // reporting.gather_report_data can populate the certificate's master
-  // instrument section.
+  // may have a master instrument recorded yet.
   const requiredFields = ["instrument_id", "date", "technician", "temperature_c", "humidity_pct"];
+
+  // Pre-fill from existing session in edit mode
+  useEffect(() => {
+    if (!editMode || !editSessionId) return;
+    getSession(editSessionId).then(session => {
+      if (session) {
+        setFormData({
+          instrument_id: session.instrument_id || passedInstrumentId || "",
+          master_instrument_id: session.master_instrument_id || "",
+          date: session.date || "",
+          technician: session.technician || "",
+          temperature_c: String(session.temperature_c ?? ""),
+          humidity_pct: String(session.humidity_pct ?? ""),
+          notes: session.notes || "",
+        });
+      }
+    }).catch(() => {});
+  }, [editMode, editSessionId, passedInstrumentId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -88,15 +109,30 @@ function SessionForm() {
     try {
       const payload = { ...formData };
       if (!payload.master_instrument_id) delete payload.master_instrument_id;
-      const created = await createSession(payload);
-      const newSessionId = created?.[0]?.id;
 
-      // Now that a session exists, submit the calibration reference data
-      // (certificate number, customer details) carried forward from
-      // InstrumentForm - this couldn't be submitted earlier since
-      // calibration_reference.session_id didn't exist yet.
-      if (passedCalibrationReference) {
-        await createCalibrationReference({ ...passedCalibrationReference, session_id: newSessionId });
+      let sessionId;
+
+      if (editMode) {
+        await updateSession(editSessionId, payload);
+        sessionId = editSessionId;
+        // Update calibration reference if carried through from InstrumentForm
+        if (passedCalibrationReference) {
+          try {
+            await updateCalibrationReference(sessionId, { ...passedCalibrationReference, session_id: sessionId });
+          } catch {
+            await createCalibrationReference({ ...passedCalibrationReference, session_id: sessionId });
+          }
+        }
+      } else {
+        const created = await createSession(payload);
+        sessionId = created?.[0]?.id;
+        // Now that a session exists, submit the calibration reference data
+        // (certificate number, customer details) carried forward from
+        // InstrumentForm - this couldn't be submitted earlier since
+        // calibration_reference.session_id didn't exist yet.
+        if (passedCalibrationReference) {
+          await createCalibrationReference({ ...passedCalibrationReference, session_id: sessionId });
+        }
       }
 
       setIsDirty(false);
@@ -112,13 +148,13 @@ function SessionForm() {
       }
 
       if (instrumentType === "Weighing") {
-        navigate(`/readings/weighing/${newSessionId}`);
+        navigate(`/readings/weighing/${sessionId}`);
       } else if (instrumentType === "Temperature") {
-        navigate(`/readings/temperature/${newSessionId}`);
+        navigate(`/readings/temperature/${sessionId}`);
       } else if (instrumentType === "Electrical") {
-        navigate(`/readings/electrical/${newSessionId}`);
+        navigate(`/readings/electrical/${sessionId}`);
       } else {
-        navigate(`/readings/${newSessionId}`);
+        navigate(`/readings/${sessionId}`);
       }
     } catch (err) {
       setErrors(prev => ({ ...prev, submit: err.message }));
@@ -134,23 +170,19 @@ function SessionForm() {
 
         <div style={{ marginBottom: 32 }}>
           <p style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--color-accent)", marginBottom: 8 }}>
-            Step 03
+            {editMode ? "Edit" : "Step 02"}
           </p>
           <h1 style={{ fontSize: 26, fontWeight: 700, color: "var(--color-primary)", marginBottom: 8 }}>
-            Calibration Session
+            {editMode ? "Edit Calibration Session" : "Calibration Session"}
           </h1>
           <p style={{ color: "var(--color-muted)", fontSize: 14 }}>
-            Set the session date, technician, and environmental conditions.
+            {editMode
+              ? "Update the session date, technician, and environmental conditions."
+              : "Set the session date, technician, and environmental conditions."}
           </p>
         </div>
 
-        <div style={{
-          background: "var(--color-surface)",
-          border: "1px solid var(--color-border)",
-          borderRadius: "var(--radius)",
-          padding: "32px",
-          boxShadow: "var(--shadow-sm)",
-        }}>
+        <div style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)", borderRadius: "var(--radius)", padding: "32px", boxShadow: "var(--shadow-sm)" }}>
           <Field label="Instrument ID" id="instrument_id" value={formData.instrument_id} onChange={v => updateField("instrument_id", v)} error={errors.instrument_id} />
 
           <div style={{ marginBottom: 20 }}>
@@ -161,14 +193,7 @@ function SessionForm() {
               id="master_instrument_id"
               value={formData.master_instrument_id}
               onChange={e => updateField("master_instrument_id", e.target.value)}
-              style={{
-                width: "100%",
-                padding: "10px",
-                borderRadius: "var(--radius)",
-                border: "1px solid var(--color-border)",
-                fontSize: 14,
-                background: "white",
-              }}
+              style={{ width: "100%", padding: "10px", borderRadius: "var(--radius)", border: "1px solid var(--color-border)", fontSize: 14, background: "white" }}
             >
               <option value="">— None selected —</option>
               {masterInstruments.map(m => (
@@ -191,9 +216,7 @@ function SessionForm() {
           <Field label="Notes (optional)" id="notes" value={formData.notes} onChange={v => updateField("notes", v)} error={errors.notes} />
 
           {errors.submit && (
-            <p style={{ color: "var(--color-error)", fontSize: 13, marginBottom: 8 }}>
-              {errors.submit}
-            </p>
+            <p style={{ color: "var(--color-error)", fontSize: 13, marginBottom: 8 }}>{errors.submit}</p>
           )}
 
           <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
@@ -201,31 +224,18 @@ function SessionForm() {
               onClick={handleSubmit}
               disabled={hasErrors || !allFilled || isSubmitting}
               style={{
-                flex: 1,
-                padding: "11px",
+                flex: 1, padding: "11px",
                 background: hasErrors || !allFilled || isSubmitting ? "var(--color-border)" : "var(--color-primary)",
-                color: "white",
-                border: "none",
-                borderRadius: "var(--radius)",
-                fontWeight: 600,
-                fontSize: 14,
+                color: "white", border: "none", borderRadius: "var(--radius)",
+                fontWeight: 600, fontSize: 14,
                 cursor: hasErrors || !allFilled || isSubmitting ? "not-allowed" : "pointer",
               }}
             >
-              {isSubmitting ? "Creating..." : "Create Session"}
+              {isSubmitting ? "Saving..." : editMode ? "Save Changes" : "Create Session"}
             </button>
             <button
-              onClick={() => safeNavigate("/dashboard")}
-              style={{
-                padding: "11px 20px",
-                background: "white",
-                color: "var(--color-text)",
-                border: "1px solid var(--color-border)",
-                borderRadius: "var(--radius)",
-                fontSize: 14,
-                fontWeight: 500,
-                cursor: "pointer",
-              }}
+              onClick={() => safeNavigate(editMode ? "/edit-session" : "/dashboard")}
+              style={{ padding: "11px 20px", background: "white", color: "var(--color-text)", border: "1px solid var(--color-border)", borderRadius: "var(--radius)", fontSize: 14, fontWeight: 500, cursor: "pointer" }}
             >
               Cancel
             </button>
@@ -237,6 +247,7 @@ function SessionForm() {
 }
 
 function Field({ label, id, value, onChange, error, type = "text" }) {
+  const isNumeric = type === "number";
   return (
     <div style={{ marginBottom: 20 }}>
       <label htmlFor={id} style={{ display: "block", fontSize: 13, fontWeight: 500, marginBottom: 6, color: "var(--color-text)" }}>
@@ -244,9 +255,10 @@ function Field({ label, id, value, onChange, error, type = "text" }) {
       </label>
       <input
         id={id}
-        type={type}
+        type={isNumeric ? "text" : type}
+        inputMode={isNumeric ? "decimal" : undefined}
         value={value}
-        onChange={e => onChange(e.target.value)}
+        onChange={isNumeric ? decimalInputHandler(onChange) : (e => onChange(e.target.value))}
         style={{ borderColor: error ? "var(--color-error)" : undefined }}
       />
       {error && (
