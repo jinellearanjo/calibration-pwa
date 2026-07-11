@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import SessionPicker from "../components/SessionPicker";
@@ -6,8 +6,11 @@ import { useUnsavedWarning } from "../hooks/useUnsavedWarning";
 import { decimalInputHandler, isValidDecimalInProgress } from "../utils/numericInput";
 import {
   createWeighingRepeatabilityTest,
+  getWeighingRepeatabilityTests,
   createWeighingOffCenterReadings,
+  getWeighingOffCenterReadings,
   createWeighingHysteresisReadings,
+  getWeighingHysteresisReadings,
 } from "../api";
 
 const TEST_POINTS = [
@@ -66,6 +69,72 @@ function initialHysteresisState() {
 }
 
 /**
+ * Maps fetched weighing_repeatability_tests records (with nested
+ * weighing_repeatability_readings) back into the form's keyed-by-test_point
+ * state shape. Any test point with no existing record keeps its blank
+ * default from initialRepeatabilityState - a session can be re-opened
+ * after only some test points have been submitted.
+ */
+function hydrateRepeatabilityState(tests) {
+  const state = initialRepeatabilityState();
+  tests.forEach(t => {
+    if (!state[t.test_point]) return; // unknown test_point, ignore defensively
+    const sortedReadings = [...(t.weighing_repeatability_readings || [])]
+      .sort((a, b) => a.reading_number - b.reading_number);
+    state[t.test_point] = {
+      nominal_load: String(t.nominal_load ?? ""),
+      unit: t.unit || "kg",
+      standard_weights_uncertainty: t.standard_weights_uncertainty == null ? "" : String(t.standard_weights_uncertainty),
+      readings: sortedReadings.length === 10
+        ? sortedReadings.map(r => ({
+            reading_before: String(r.reading_before ?? ""),
+            reading_with_load: String(r.reading_with_load ?? ""),
+            reading_after: String(r.reading_after ?? ""),
+          }))
+        : state[t.test_point].readings, // defensive fallback, shouldn't happen - backend requires exactly 10
+    };
+  });
+  return state;
+}
+
+/**
+ * Maps fetched weighing_off_center_readings records back into the form's
+ * keyed-by-position state shape. Any position with no existing record
+ * keeps its blank default.
+ */
+function hydrateOffCenterState(readings) {
+  const state = initialOffCenterState();
+  readings.forEach(r => {
+    if (!state[r.position]) return;
+    state[r.position] = {
+      nominal_load: String(r.nominal_load ?? ""),
+      unit: r.unit || "kg",
+      reading_before: String(r.reading_before ?? ""),
+      reading_with_load: String(r.reading_with_load ?? ""),
+      reading_after: String(r.reading_after ?? ""),
+    };
+  });
+  return state;
+}
+
+/**
+ * Maps fetched weighing_hysteresis_readings records back into the form's
+ * keyed-by-phase state shape. Any phase with no existing record keeps
+ * its blank default.
+ */
+function hydrateHysteresisState(readings) {
+  const state = initialHysteresisState();
+  readings.forEach(r => {
+    if (!state[r.phase]) return;
+    state[r.phase] = {
+      reading_value: String(r.reading_value ?? ""),
+      unit: r.unit || "kg",
+    };
+  });
+  return state;
+}
+
+/**
  * WeighingReadingsForm component.
  * Data entry for the three raw-data tests a Weighing calibration requires:
  * repeatability (3 load points x 10 readings), off-center / eccentricity
@@ -94,11 +163,53 @@ function WeighingReadingsForm() {
   const [repeatability, setRepeatability] = useState(initialRepeatabilityState());
   const [offCenter, setOffCenter] = useState(initialOffCenterState());
   const [hysteresis, setHysteresis] = useState(initialHysteresisState());
+  const [loadingExisting, setLoadingExisting] = useState(false);
 
   const [activeSection, setActiveSection] = useState("repeatability");
   const [sectionStatus, setSectionStatus] = useState({ repeatability: "pending", offCenter: "pending", hysteresis: "pending" });
   const [submitError, setSubmitError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Load any already-saved data for this session so reopening the form
+  // reflects existing entries rather than always starting blank - matches
+  // the pattern TemperatureReadingsForm.jsx/ElectricalReadingsForm.jsx
+  // already use. All three sections are fetched in parallel since they're
+  // independent tables; a section with no saved data yet just keeps its
+  // blank default and stays "pending".
+  const loadExisting = useCallback(() => {
+    if (!effectiveSessionId) return;
+    setLoadingExisting(true);
+    Promise.all([
+      getWeighingRepeatabilityTests(effectiveSessionId),
+      getWeighingOffCenterReadings(effectiveSessionId),
+      getWeighingHysteresisReadings(effectiveSessionId),
+    ])
+      .then(([repeatabilityTests, offCenterReadings, hysteresisReadings]) => {
+        if (repeatabilityTests?.length) {
+          setRepeatability(hydrateRepeatabilityState(repeatabilityTests));
+        }
+        if (offCenterReadings?.length === 5) {
+          setOffCenter(hydrateOffCenterState(offCenterReadings));
+        }
+        if (hysteresisReadings?.length === 5) {
+          setHysteresis(hydrateHysteresisState(hysteresisReadings));
+        }
+        setSectionStatus({
+          repeatability: repeatabilityTests?.length === TEST_POINTS.length ? "saved" : "pending",
+          offCenter: offCenterReadings?.length === 5 ? "saved" : "pending",
+          hysteresis: hysteresisReadings?.length === 5 ? "saved" : "pending",
+        });
+      })
+      .catch(() => {
+        // Non-fatal: form stays at its blank defaults and the user can
+        // fill it in fresh, same fallback behavior as the other forms.
+      })
+      .finally(() => setLoadingExisting(false));
+  }, [effectiveSessionId]);
+
+  useEffect(() => {
+    loadExisting();
+  }, [loadExisting]);
 
   function updateRepeatabilityField(testPoint, field, value) {
     setRepeatability(prev => ({
@@ -242,6 +353,12 @@ function WeighingReadingsForm() {
 
         {showPicker && (
           <SessionPicker selectedSessionId={pickedSessionId} onSelect={setPickedSessionId} />
+        )}
+
+        {loadingExisting && (
+          <p style={{ color: "var(--color-muted)", fontSize: 13, marginBottom: 16 }}>
+            Loading existing test data...
+          </p>
         )}
 
         <SectionTabs activeSection={activeSection} setActiveSection={setActiveSection} sectionStatus={sectionStatus} />
