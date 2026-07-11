@@ -28,6 +28,7 @@ function App() {
         <Route path="/session" element={<ProtectedRoute><SessionForm /></ProtectedRoute>} />
         <Route path="/readings" element={<ProtectedRoute><ReadingsForm /></ProtectedRoute>} />
         <Route path="/readings/:sessionId" element={<ProtectedRoute><ReadingsForm /></ProtectedRoute>} />
+        <Route path="/readings/weighing" element={<ProtectedRoute><WeighingReadingsForm /></ProtectedRoute>} />
         <Route path="/readings/weighing/:sessionId" element={<ProtectedRoute><WeighingReadingsForm /></ProtectedRoute>} />
         <Route path="/readings/temperature" element={<ProtectedRoute><TemperatureReadingsForm /></ProtectedRoute>} />
         <Route path="/readings/temperature/:sessionId" element={<ProtectedRoute><TemperatureReadingsForm /></ProtectedRoute>} />

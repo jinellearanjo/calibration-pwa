@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Navbar from "../components/Navbar";
+import SessionPicker from "../components/SessionPicker";
 import { useUnsavedWarning } from "../hooks/useUnsavedWarning";
 import { decimalInputHandler, isValidDecimalInProgress } from "../utils/numericInput";
 import {
@@ -72,11 +73,23 @@ function initialHysteresisState() {
  * this does not follow the single ascending/descending-per-point pattern —
  * see the reference doc for why weighing's uncertainty budget needs raw
  * data from all three tests rather than one set of per-point readings.
+ *
+ * Reachable two ways, same pattern as ReadingsForm.jsx/TemperatureReadingsForm.jsx:
+ *  - Directly with :sessionId already in the URL (/readings/weighing/:sessionId)
+ *    from SessionForm's post-creation routing - no picker shown.
+ *  - From a bare route with no session (/readings/weighing) - a
+ *    SessionPicker is shown above the form and all three sections' submit
+ *    buttons stay disabled until a session is chosen.
  */
 function WeighingReadingsForm() {
   const navigate = useNavigate();
-  const { sessionId } = useParams();
+  const { sessionId: urlSessionId } = useParams();
   const { setIsDirty, safeNavigate } = useUnsavedWarning();
+
+  const [pickedSessionId, setPickedSessionId] = useState(null);
+  const effectiveSessionId = urlSessionId || pickedSessionId;
+  const showPicker = !urlSessionId;
+  const formDisabled = !effectiveSessionId;
 
   const [repeatability, setRepeatability] = useState(initialRepeatabilityState());
   const [offCenter, setOffCenter] = useState(initialOffCenterState());
@@ -138,7 +151,7 @@ function WeighingReadingsForm() {
           // validated by FastAPI before the endpoint's own session_id-from-URL
           // override ever runs - omitting it here causes a 422, even though
           // the backend technically re-sets it afterward. Verified empirically.
-          session_id: sessionId,
+          session_id: effectiveSessionId,
           test_point: tp.key,
           nominal_load: Number(t.nominal_load),
           unit: t.unit,
@@ -150,7 +163,7 @@ function WeighingReadingsForm() {
           reading_with_load: Number(r.reading_with_load),
           reading_after: Number(r.reading_after),
         }));
-        await createWeighingRepeatabilityTest(sessionId, testPayload, readingsPayload);
+        await createWeighingRepeatabilityTest(effectiveSessionId, testPayload, readingsPayload);
       }
       setSectionStatus(prev => ({ ...prev, repeatability: "saved" }));
       setActiveSection("offCenter");
@@ -176,7 +189,7 @@ function WeighingReadingsForm() {
           reading_after: Number(r.reading_after),
         };
       });
-      await createWeighingOffCenterReadings(sessionId, payload);
+      await createWeighingOffCenterReadings(effectiveSessionId, payload);
       setSectionStatus(prev => ({ ...prev, offCenter: "saved" }));
       setActiveSection("hysteresis");
     } catch (err) {
@@ -199,28 +212,15 @@ function WeighingReadingsForm() {
           unit: r.unit,
         };
       });
-      await createWeighingHysteresisReadings(sessionId, payload);
+      await createWeighingHysteresisReadings(effectiveSessionId, payload);
       setSectionStatus(prev => ({ ...prev, hysteresis: "saved" }));
       setIsDirty(false);
-      navigate(`/calculation/${sessionId}`);
+      navigate(`/calculation/${effectiveSessionId}`);
     } catch (err) {
       setSubmitError(err.message);
     } finally {
       setIsSubmitting(false);
     }
-  }
-
-  if (!sessionId) {
-    return (
-      <div style={{ minHeight: "100vh", background: "var(--color-bg)" }}>
-        <Navbar />
-        <div style={{ maxWidth: 600, margin: "0 auto", padding: "48px 32px" }}>
-          <p style={{ color: "var(--color-error)" }}>
-            No session selected. Please start from the calibration session step.
-          </p>
-        </div>
-      </div>
-    );
   }
 
   return (
@@ -240,6 +240,10 @@ function WeighingReadingsForm() {
           </p>
         </div>
 
+        {showPicker && (
+          <SessionPicker selectedSessionId={pickedSessionId} onSelect={setPickedSessionId} />
+        )}
+
         <SectionTabs activeSection={activeSection} setActiveSection={setActiveSection} sectionStatus={sectionStatus} />
 
         {submitError && (
@@ -254,7 +258,7 @@ function WeighingReadingsForm() {
             updateField={updateRepeatabilityField}
             updateReading={updateRepeatabilityReading}
             onSubmit={submitRepeatability}
-            canSubmit={allRepeatabilityComplete && !isSubmitting}
+            canSubmit={allRepeatabilityComplete && !isSubmitting && !formDisabled}
             isSubmitting={isSubmitting}
           />
         )}
@@ -264,7 +268,7 @@ function WeighingReadingsForm() {
             offCenter={offCenter}
             updateField={updateOffCenterField}
             onSubmit={submitOffCenter}
-            canSubmit={allOffCenterComplete && !isSubmitting}
+            canSubmit={allOffCenterComplete && !isSubmitting && !formDisabled}
             isSubmitting={isSubmitting}
           />
         )}
@@ -274,7 +278,7 @@ function WeighingReadingsForm() {
             hysteresis={hysteresis}
             updateField={updateHysteresisField}
             onSubmit={submitHysteresis}
-            canSubmit={allHysteresisComplete && !isSubmitting}
+            canSubmit={allHysteresisComplete && !isSubmitting && !formDisabled}
             isSubmitting={isSubmitting}
           />
         )}
