@@ -58,3 +58,6 @@ typing_extensions==4.16.0
 uvicorn==0.49.0
 websockets==15.0.1
 yarl==1.24.2
+
+# Dev/test only - not needed for the deployed app itself.
+pytest==9.1.1s

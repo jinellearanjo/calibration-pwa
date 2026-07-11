@@ -1,12 +1,13 @@
 """calculation_engine.py
 
 Implements the GUM-compliant uncertainty budget calculations for calibration
-sessions. Built out for Pressure and Weighing (confirmed real formula files,
-see formulas/pressure.json and formulas/weighing.json), and Temperature
-(see formulas/temperature.json and calculate_type_a_temperature onward -
-Temperature currently supports one setpoint per session only, see
-formula_manager.py's _build_temperature_budget). Electrical functions are
-not yet implemented — waiting on 11 function types' worth of formulas.
+sessions, across all four categories: Pressure, Weighing, Temperature, and
+Electrical (see formulas/*.json for each category's source-verified formula
+documentation, including anomalies flagged pending Charkha's confirmation).
+
+Temperature supports multiple setpoints per session - formula_manager.py's
+_build_temperature_budgets (plural) loops over every setpoint's test data
+and returns one budget per setpoint via uncertainty_budgets.temperature_test_id.
 
 Function order and naming follows the original project roadmap:
     calculate_type_a, calculate_u_std, calculate_u_res, calculate_u_hys,
@@ -18,7 +19,9 @@ Pressure uses these directly. Weighing's procedure doesn't map cleanly onto
 the same component names (no u_temp/u_head, and its Type A/Type B sources
 are structurally different — see formulas/weighing.json's notes field) so
 it has its own parallel set of functions rather than being forced into the
-Pressure-shaped ones.
+Pressure-shaped ones. Temperature and Electrical likewise each have their
+own parallel function sets (calculate_type_a_temperature onward,
+calculate_type_a_electrical onward) for the same reason.
 """
 
 import math
