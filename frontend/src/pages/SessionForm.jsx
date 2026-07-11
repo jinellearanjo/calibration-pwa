@@ -43,6 +43,25 @@ function SessionForm() {
   const [masterInstruments, setMasterInstruments] = useState([]);
   const [masterLoadError, setMasterLoadError] = useState("");
 
+  // The instrument's category (Pressure/Temperature/Weighing/Electrical),
+  // used to filter which master instruments show in the dropdown below -
+  // without this, every master instrument for the user showed up
+  // regardless of category, so a Temperature session could accidentally
+  // have a Pressure master (e.g. "Dead Weight Tester") selected.
+  // Prefer passedInstrumentType (set by InstrumentForm's navigation state)
+  // since it avoids an extra request; fall back to looking it up if this
+  // form was opened directly (e.g. a page refresh lost navigation state).
+  const [resolvedInstrumentType, setResolvedInstrumentType] = useState(passedInstrumentType || null);
+
+  useEffect(() => {
+    if (resolvedInstrumentType || !formData.instrument_id) return;
+    let cancelled = false;
+    getInstrument(formData.instrument_id)
+      .then(instrument => { if (!cancelled && instrument?.type) setResolvedInstrumentType(instrument.type); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [resolvedInstrumentType, formData.instrument_id]);
+
   // master_instrument_id is intentionally not in requiredFields: some
   // historical sessions predate this field, and not every calibration type
   // may have a master instrument recorded yet.
@@ -196,11 +215,25 @@ function SessionForm() {
               style={{ width: "100%", padding: "10px", borderRadius: "var(--radius)", border: "1px solid var(--color-border)", fontSize: 14, background: "white" }}
             >
               <option value="">— None selected —</option>
-              {masterInstruments.map(m => (
-                <option key={m.id} value={m.id}>
-                  {m.name} ({m.instrument_type}, S/N {m.serial_number})
-                </option>
-              ))}
+              {masterInstruments
+                .filter(m =>
+                  // Only show masters matching this instrument's category -
+                  // without this, every master for the user showed up
+                  // regardless of type (a Temperature session could end up
+                  // with a Pressure master like "Dead Weight Tester"
+                  // selected). Still show the currently-selected master
+                  // even if it doesn't match, so editing a session that
+                  // already has a mismatched master doesn't silently hide
+                  // its current selection from the dropdown.
+                  !resolvedInstrumentType ||
+                  m.instrument_type === resolvedInstrumentType ||
+                  m.id === formData.master_instrument_id
+                )
+                .map(m => (
+                  <option key={m.id} value={m.id}>
+                    {m.name} ({m.instrument_type}, S/N {m.serial_number})
+                  </option>
+                ))}
             </select>
             {masterLoadError && (
               <span style={{ color: "var(--color-error)", fontSize: 12, marginTop: 4, display: "block" }}>
