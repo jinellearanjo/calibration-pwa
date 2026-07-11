@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import SessionPicker from "../components/SessionPicker";
 import { useUnsavedWarning } from "../hooks/useUnsavedWarning";
+import { isValidDecimalInProgress } from "../utils/numericInput";
 import { createReading, getReadings } from "../api";
 
 /**
@@ -227,9 +228,9 @@ function ReadingsForm({
                       <td style={{ ...tdStyle, fontFamily: "var(--font-mono)", fontWeight: 600, color: "var(--color-accent)" }}>
                         {String(row.point_number).padStart(2, "0")}
                       </td>
-                      <td style={tdStyle}><input type="number" value={row.nominal_value} disabled={formDisabled} onChange={e => updateRow(index, "nominal_value", e.target.value)} style={inputStyle} /></td>
-                      <td style={tdStyle}><input type="number" value={row.measured_value_up} disabled={formDisabled} onChange={e => updateRow(index, "measured_value_up", e.target.value)} style={inputStyle} /></td>
-                      <td style={tdStyle}><input type="number" value={row.measured_value_down} disabled={formDisabled} onChange={e => updateRow(index, "measured_value_down", e.target.value)} style={inputStyle} /></td>
+                      <td style={tdStyle}><input type="text" inputMode="decimal" value={row.nominal_value} disabled={formDisabled} onChange={e => { if (isValidDecimalInProgress(e.target.value)) updateRow(index, "nominal_value", e.target.value); }} style={inputStyle} /></td>
+                      <td style={tdStyle}><input type="text" inputMode="decimal" value={row.measured_value_up} disabled={formDisabled} onChange={e => { if (isValidDecimalInProgress(e.target.value)) updateRow(index, "measured_value_up", e.target.value); }} style={inputStyle} /></td>
+                      <td style={tdStyle}><input type="text" inputMode="decimal" value={row.measured_value_down} disabled={formDisabled} onChange={e => { if (isValidDecimalInProgress(e.target.value)) updateRow(index, "measured_value_down", e.target.value); }} style={inputStyle} /></td>
                       <td style={{ ...tdStyle, textAlign: "center", fontFamily: "var(--font-mono)", color: row.mean_error !== null ? "var(--color-text)" : "var(--color-muted)" }}>
                         {row.mean_error !== null ? `±${row.mean_error}` : "—"}
                       </td>

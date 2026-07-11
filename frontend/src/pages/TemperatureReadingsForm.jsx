@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import SessionPicker from "../components/SessionPicker";
 import { useUnsavedWarning } from "../hooks/useUnsavedWarning";
+import { decimalInputHandler, isValidDecimalInProgress } from "../utils/numericInput";
 import {
   createTemperatureRepeatabilityTest,
   getTemperatureRepeatabilityTests,
@@ -385,10 +386,11 @@ function SetpointCard({ index, setpoint, subtype, canRemove, formDisabled, onFie
               <td style={{ padding: "4px 8px", color: "var(--color-muted)" }}>{i + 1}</td>
               <td style={{ padding: "4px 8px" }}>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   value={r.reading_value}
                   disabled={formDisabled}
-                  onChange={e => onReadingChange(i, e.target.value)}
+                  onChange={e => { if (isValidDecimalInProgress(e.target.value)) onReadingChange(i, e.target.value); }}
                   style={{ width: "100%" }}
                 />
               </td>
@@ -401,17 +403,19 @@ function SetpointCard({ index, setpoint, subtype, canRemove, formDisabled, onFie
 }
 
 function SmallField({ label, value, onChange, type = "text", disabled, placeholder }) {
+  const isNumeric = type === "number";
   return (
     <div style={{ flex: 1, minWidth: 140, marginBottom: 12 }}>
       <label style={{ display: "block", fontSize: 12, fontWeight: 500, marginBottom: 4, color: "var(--color-text)" }}>
         {label}
       </label>
       <input
-        type={type}
+        type={isNumeric ? "text" : type}
+        inputMode={isNumeric ? "decimal" : undefined}
         value={value}
         placeholder={placeholder}
         disabled={disabled}
-        onChange={e => onChange(e.target.value)}
+        onChange={isNumeric ? decimalInputHandler(onChange) : (e => onChange(e.target.value))}
         style={{ width: "100%" }}
       />
     </div>

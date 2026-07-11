@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState, useEffect } from "react"
 import { saveMaster, deleteMaster, selectMaster, listMasterInstruments } from "../api"
 import Navbar from "../components/Navbar"
+import { decimalInputHandler } from "../utils/numericInput"
 
 const TOKEN = {
   fontFamily: "'Inter', 'Segoe UI', sans-serif",
@@ -215,10 +216,11 @@ export default function MasterForm({
 
 function FloatingLabelField({ id, label, value, onChange, type = "text", error = "", onFocus, onBlur, inputProps = {} }) {
   const isDateField = type === "date"
+  const isNumeric = type === "number"
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
       <div style={{ position: "relative" }}>
-        <input id={id} type={type} value={value} placeholder=" " onChange={(e) => onChange(e.target.value)} onFocus={onFocus} onBlur={onBlur} aria-describedby={error ? `${id}-error` : undefined} aria-invalid={!!error} {...inputProps}
+        <input id={id} type={isNumeric ? "text" : type} inputMode={isNumeric ? "decimal" : undefined} value={value} placeholder=" " onChange={isNumeric ? decimalInputHandler(onChange) : ((e) => onChange(e.target.value))} onFocus={onFocus} onBlur={onBlur} aria-describedby={error ? `${id}-error` : undefined} aria-invalid={!!error} {...inputProps}
           style={{ width: "100%", boxSizing: "border-box", padding: "20px 12px 6px", fontSize: TOKEN.fontSize, fontFamily: TOKEN.fontFamily, color: TOKEN.colorText, background: TOKEN.colorSurface, border: `1px solid ${error ? TOKEN.colorError : TOKEN.colorBorder}`, borderRadius: TOKEN.radius, outline: "none", transition: "border-color 0.15s" }}
           onFocusCapture={(e) => { e.currentTarget.style.borderColor = error ? TOKEN.colorError : TOKEN.colorBorderFocus }}
           onBlurCapture={(e) => { e.currentTarget.style.borderColor = error ? TOKEN.colorError : TOKEN.colorBorder }}

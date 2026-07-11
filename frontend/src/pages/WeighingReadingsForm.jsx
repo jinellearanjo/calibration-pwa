@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import { useUnsavedWarning } from "../hooks/useUnsavedWarning";
+import { decimalInputHandler, isValidDecimalInProgress } from "../utils/numericInput";
 import {
   createWeighingRepeatabilityTest,
   createWeighingOffCenterReadings,
@@ -389,25 +390,28 @@ function RepeatabilitySection({ repeatability, updateField, updateReading, onSub
                   <td style={{ padding: "4px 8px", color: "var(--color-muted)" }}>{i + 1}</td>
                   <td style={{ padding: "4px 8px" }}>
                     <input
-                      type="number"
+                      type="text"
+                      inputMode="decimal"
                       value={r.reading_before}
-                      onChange={e => updateReading(tp.key, i, "reading_before", e.target.value)}
+                      onChange={e => { if (isValidDecimalInProgress(e.target.value)) updateReading(tp.key, i, "reading_before", e.target.value); }}
                       style={{ width: "100%" }}
                     />
                   </td>
                   <td style={{ padding: "4px 8px" }}>
                     <input
-                      type="number"
+                      type="text"
+                      inputMode="decimal"
                       value={r.reading_with_load}
-                      onChange={e => updateReading(tp.key, i, "reading_with_load", e.target.value)}
+                      onChange={e => { if (isValidDecimalInProgress(e.target.value)) updateReading(tp.key, i, "reading_with_load", e.target.value); }}
                       style={{ width: "100%" }}
                     />
                   </td>
                   <td style={{ padding: "4px 8px" }}>
                     <input
-                      type="number"
+                      type="text"
+                      inputMode="decimal"
                       value={r.reading_after}
-                      onChange={e => updateReading(tp.key, i, "reading_after", e.target.value)}
+                      onChange={e => { if (isValidDecimalInProgress(e.target.value)) updateReading(tp.key, i, "reading_after", e.target.value); }}
                       style={{ width: "100%" }}
                     />
                   </td>
@@ -453,19 +457,19 @@ function OffCenterSection({ offCenter, updateField, onSubmit, canSubmit, isSubmi
               <tr key={p.key}>
                 <td style={{ padding: "4px 8px", fontWeight: 500 }}>{p.label}</td>
                 <td style={{ padding: "4px 8px" }}>
-                  <input type="number" value={offCenter[p.key].nominal_load} onChange={e => updateField(p.key, "nominal_load", e.target.value)} style={{ width: "100%" }} />
+                  <input type="text" inputMode="decimal" value={offCenter[p.key].nominal_load} onChange={e => { if (isValidDecimalInProgress(e.target.value)) updateField(p.key, "nominal_load", e.target.value); }} style={{ width: "100%" }} />
                 </td>
                 <td style={{ padding: "4px 8px" }}>
                   <input type="text" value={offCenter[p.key].unit} onChange={e => updateField(p.key, "unit", e.target.value)} style={{ width: "100%" }} />
                 </td>
                 <td style={{ padding: "4px 8px" }}>
-                  <input type="number" value={offCenter[p.key].reading_before} onChange={e => updateField(p.key, "reading_before", e.target.value)} style={{ width: "100%" }} />
+                  <input type="text" inputMode="decimal" value={offCenter[p.key].reading_before} onChange={e => { if (isValidDecimalInProgress(e.target.value)) updateField(p.key, "reading_before", e.target.value); }} style={{ width: "100%" }} />
                 </td>
                 <td style={{ padding: "4px 8px" }}>
-                  <input type="number" value={offCenter[p.key].reading_with_load} onChange={e => updateField(p.key, "reading_with_load", e.target.value)} style={{ width: "100%" }} />
+                  <input type="text" inputMode="decimal" value={offCenter[p.key].reading_with_load} onChange={e => { if (isValidDecimalInProgress(e.target.value)) updateField(p.key, "reading_with_load", e.target.value); }} style={{ width: "100%" }} />
                 </td>
                 <td style={{ padding: "4px 8px" }}>
-                  <input type="number" value={offCenter[p.key].reading_after} onChange={e => updateField(p.key, "reading_after", e.target.value)} style={{ width: "100%" }} />
+                  <input type="text" inputMode="decimal" value={offCenter[p.key].reading_after} onChange={e => { if (isValidDecimalInProgress(e.target.value)) updateField(p.key, "reading_after", e.target.value); }} style={{ width: "100%" }} />
                 </td>
               </tr>
             ))}
@@ -506,7 +510,7 @@ function HysteresisSection({ hysteresis, updateField, onSubmit, canSubmit, isSub
               <tr key={p.key}>
                 <td style={{ padding: "4px 8px", fontWeight: 500 }}>{i + 1}. {p.label}</td>
                 <td style={{ padding: "4px 8px" }}>
-                  <input type="number" value={hysteresis[p.key].reading_value} onChange={e => updateField(p.key, "reading_value", e.target.value)} style={{ width: "100%" }} />
+                  <input type="text" inputMode="decimal" value={hysteresis[p.key].reading_value} onChange={e => { if (isValidDecimalInProgress(e.target.value)) updateField(p.key, "reading_value", e.target.value); }} style={{ width: "100%" }} />
                 </td>
                 <td style={{ padding: "4px 8px" }}>
                   <input type="text" value={hysteresis[p.key].unit} onChange={e => updateField(p.key, "unit", e.target.value)} style={{ width: "100%" }} />
@@ -523,12 +527,23 @@ function HysteresisSection({ hysteresis, updateField, onSubmit, canSubmit, isSub
 }
 
 function SmallField({ label, value, onChange, type = "text" }) {
+  const isNumeric = type === "number";
   return (
     <div style={{ flex: 1 }}>
       <label style={{ display: "block", fontSize: 12, fontWeight: 500, marginBottom: 4, color: "var(--color-text)" }}>
         {label}
       </label>
-      <input type={type} value={value} onChange={e => onChange(e.target.value)} style={{ width: "100%" }} />
+      {isNumeric ? (
+        <input
+          type="text"
+          inputMode="decimal"
+          value={value}
+          onChange={decimalInputHandler(onChange)}
+          style={{ width: "100%" }}
+        />
+      ) : (
+        <input type={type} value={value} onChange={e => onChange(e.target.value)} style={{ width: "100%" }} />
+      )}
     </div>
   );
 }
