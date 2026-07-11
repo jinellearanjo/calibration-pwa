@@ -224,7 +224,7 @@ function ReadingsForm({
                 </thead>
                 <tbody>
                   {rows.map((row, index) => (
-                    <tr key={row.point_number} style={{ background: index % 2 === 0 ? "white" : "#F9FAFB", borderBottom: "1px solid var(--color-border)" }}>
+                    <tr key={index} style={{ background: index % 2 === 0 ? "white" : "#F9FAFB", borderBottom: "1px solid var(--color-border)" }}>
                       <td style={{ ...tdStyle, fontFamily: "var(--font-mono)", fontWeight: 600, color: "var(--color-accent)" }}>
                         {String(row.point_number).padStart(2, "0")}
                       </td>
