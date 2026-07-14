@@ -184,7 +184,7 @@ function ReadingsForm({
         </div>
 
         {showPicker && (
-          <SessionPicker selectedSessionId={pickedSessionId} onSelect={setPickedSessionId} />
+          <SessionPicker selectedSessionId={pickedSessionId} onSelect={setPickedSessionId} categoryFilter="Pressure" />
         )}
 
         <div style={{ opacity: formDisabled ? 0.5 : 1, transition: "opacity 0.15s" }}>

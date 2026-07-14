@@ -352,7 +352,7 @@ function WeighingReadingsForm() {
         </div>
 
         {showPicker && (
-          <SessionPicker selectedSessionId={pickedSessionId} onSelect={setPickedSessionId} />
+          <SessionPicker selectedSessionId={pickedSessionId} onSelect={setPickedSessionId} categoryFilter="Weighing" />
         )}
 
         {loadingExisting && (
