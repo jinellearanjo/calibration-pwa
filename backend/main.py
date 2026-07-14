@@ -35,6 +35,48 @@ app.add_middleware(
 )
 
 
+def _require_instrument_type(session_id: str, expected_type: str) -> None:
+    """Guard against submitting category-specific test data (Weighing/
+    Temperature/Electrical repeatability, or a Pressure reading) for a
+    session whose actual instrument doesn't match that category.
+
+    This exists because SessionPicker.jsx (used as a fallback whenever a
+    readings page is reached without a :sessionId in the URL, e.g. via a
+    Dashboard card) lists every session for the user with no filtering by
+    category - so nothing on the frontend actually stops someone from
+    landing on, say, the Weighing readings page and picking a Temperature
+    session from the dropdown. Without this guard, that would silently
+    insert Weighing test rows against a session whose instrument is
+    Temperature, corrupting the session's data with no error at all.
+
+    Args:
+        session_id: UUID (as a string) of the calibration session.
+        expected_type: The category this endpoint is for - one of
+            "Pressure", "Temperature", "Weighing", "Electrical".
+
+    Raises:
+        HTTPException: 404 if the session or its instrument can't be
+            found; 400 if the instrument's actual type doesn't match
+            expected_type.
+    """
+    session = database.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    instrument = database.get_instrument(session["instrument_id"])
+    if not instrument:
+        raise HTTPException(status_code=404, detail="Instrument not found for this session.")
+    actual_type = instrument.get("type")
+    if actual_type != expected_type:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"This session's instrument is type '{actual_type}', not "
+                f"'{expected_type}'. Cannot submit {expected_type} test data "
+                f"for a session whose instrument category doesn't match."
+            ),
+        )
+
+
 # ── Health ────────────────────────────────────────────────────────────────────
 
 @app.get("/health")
@@ -438,9 +480,11 @@ def get_calibration_reference_by_session(
 
 
 # ── Readings ──────────────────────────────────────────────────────────────────
-# Used by Pressure, Temperature, and Electrical sessions. See the Weighing
-# section below for the three test-specific endpoints Weighing sessions use
-# instead.
+# Used by Pressure sessions only. Temperature, Electrical, and Weighing each
+# have their own dedicated tables/endpoints (see the sections below) - this
+# comment previously claimed Temperature/Electrical used this generic table
+# too, which was already flagged and fixed once before; re-confirmed false
+# by reading formula_manager.py's dispatch logic directly.
 
 @app.post("/api/readings")
 def create_reading(
@@ -455,9 +499,14 @@ def create_reading(
 
     Returns:
         dict: The created reading record.
+
+    Raises:
+        HTTPException: 404 if the session/instrument can't be found; 400
+            if the session's instrument isn't a Pressure instrument.
     """
     data = payload.model_dump()
     data["session_id"] = str(data["session_id"])
+    _require_instrument_type(data["session_id"], "Pressure")
     response = database.supabase.table("readings").insert(data).execute()
     return response.data
 
@@ -688,8 +737,11 @@ def create_weighing_repeatability_test(
             "readings".
 
     Raises:
-        HTTPException: 400 if fewer or more than 10 readings are supplied.
+        HTTPException: 400 if fewer or more than 10 readings are supplied,
+            or if the session's instrument isn't a Weighing instrument.
+        HTTPException: 404 if the session/instrument can't be found.
     """
+    _require_instrument_type(str(session_id), "Weighing")
     if len(readings) != 10:
         raise HTTPException(
             status_code=400,
@@ -757,8 +809,11 @@ def create_weighing_off_center_readings(
         list: The created off-center reading records.
 
     Raises:
-        HTTPException: 400 if not exactly 5 readings are supplied.
+        HTTPException: 400 if not exactly 5 readings are supplied, or if
+            the session's instrument isn't a Weighing instrument.
+        HTTPException: 404 if the session/instrument can't be found.
     """
+    _require_instrument_type(str(session_id), "Weighing")
     if len(readings) != 5:
         raise HTTPException(
             status_code=400,
@@ -809,8 +864,11 @@ def create_weighing_hysteresis_readings(
         list: The created hysteresis reading records.
 
     Raises:
-        HTTPException: 400 if not exactly 5 readings are supplied.
+        HTTPException: 400 if not exactly 5 readings are supplied, or if
+            the session's instrument isn't a Weighing instrument.
+        HTTPException: 404 if the session/instrument can't be found.
     """
+    _require_instrument_type(str(session_id), "Weighing")
     if len(readings) != 5:
         raise HTTPException(
             status_code=400,
@@ -867,8 +925,11 @@ def create_temperature_repeatability_test(
         dict: The created test record with its readings nested under "readings".
 
     Raises:
-        HTTPException: 400 if fewer or more than 3 readings are supplied.
+        HTTPException: 400 if fewer or more than 3 readings are supplied,
+            or if the session's instrument isn't a Temperature instrument.
+        HTTPException: 404 if the session/instrument can't be found.
     """
+    _require_instrument_type(str(session_id), "Temperature")
     if len(readings) != 3:
         raise HTTPException(
             status_code=400,
@@ -938,8 +999,11 @@ def create_electrical_test(
         dict: The created test record with its readings nested under "readings".
 
     Raises:
-        HTTPException: 400 if no readings are supplied.
+        HTTPException: 400 if no readings are supplied, or if the
+            session's instrument isn't an Electrical instrument.
+        HTTPException: 404 if the session/instrument can't be found.
     """
+    _require_instrument_type(str(session_id), "Electrical")
     if not readings:
         raise HTTPException(
             status_code=400,
