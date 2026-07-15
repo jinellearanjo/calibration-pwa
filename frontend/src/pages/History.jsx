@@ -122,12 +122,14 @@ function History() {
         {sessions.length > 0 && (
           <div style={{ display: "flex", alignItems: "flex-end", gap: 16, marginBottom: 20, flexWrap: "wrap" }}>
             <FilterSelect
+              id="category-filter"
               label="Category"
               value={categoryFilter}
               onChange={setCategoryFilter}
               options={CATEGORY_OPTIONS}
             />
             <FilterSelect
+              id="status-filter"
               label="Status"
               value={statusFilter}
               onChange={setStatusFilter}
@@ -183,6 +185,7 @@ function History() {
                     <td style={tdStyle}><StatusBadge status={session.status || "PENDING"} /></td>
                     <td style={tdStyle}>
                       <div style={{ display: "flex", gap: 8 }}>
+                        <ActionButton label="Readings" onClick={() => navigate(readingsPathFor(session))} />
                         <ActionButton label="Results" onClick={() => navigate(`/results/${session.id}`)} />
                         <ActionButton label="Report" onClick={() => navigate(`/report/${session.id}`)} />
                         <ActionButton
@@ -204,11 +207,13 @@ function History() {
   );
 }
 
-function FilterSelect({ label, value, onChange, options }) {
+function FilterSelect({ id, label, value, onChange, options }) {
   return (
     <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: "var(--color-muted)", fontWeight: 500 }}>
       {label}
       <select
+        id={id}
+        name={id}
         value={value}
         onChange={e => onChange(e.target.value)}
         style={{ padding: "7px 10px", border: "1px solid var(--color-border)", borderRadius: "var(--radius)", fontSize: 13, color: "var(--color-text)", background: "white", cursor: "pointer", minWidth: 160 }}
@@ -219,6 +224,21 @@ function FilterSelect({ label, value, onChange, options }) {
       </select>
     </label>
   );
+}
+
+/**
+ * Maps a session to its correct category-specific readings page, with the
+ * sessionId already known - so there's no picker step, unlike reaching a
+ * bare readings route directly. This is what fixes the Dashboard's old
+ * "Enter Readings" card always assuming Pressure regardless of the
+ * session's actual instrument category.
+ */
+function readingsPathFor(session) {
+  const type = session.instruments?.type;
+  if (type === "Weighing") return `/readings/weighing/${session.id}`;
+  if (type === "Temperature") return `/readings/temperature/${session.id}`;
+  if (type === "Electrical") return `/readings/electrical/${session.id}`;
+  return `/readings/${session.id}`; // Pressure, or an unknown/missing type falls back to the generic form
 }
 
 function ActionButton({ label, onClick, danger = false, disabled = false }) {
