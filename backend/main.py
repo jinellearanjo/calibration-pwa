@@ -553,17 +553,25 @@ def create_master_instrument(
 
 @app.get("/api/master-instruments")
 def list_master_instruments(user_id: str = Depends(get_current_user_id)):
-    """List all master instruments for the authenticated user.
+    """List all master instruments.
+
+    Master instruments are shared physical lab assets, not personal to
+    whoever registered them - two technicians logged in as different
+    users both need to see and select the same physical Dead Weight
+    Tester, Fluke 5560A, etc. So visibility is intentionally NOT scoped
+    to the creator, unlike instruments/calibration_sessions which are
+    per-user. user_id is still recorded on creation (see
+    create_master_instrument) purely for an audit trail of who
+    registered each asset - it does not gate who can see it.
 
     Args:
-        user_id: UUID of the authenticated user from JWT.
+        user_id: UUID of the authenticated user from JWT (required for
+            auth, not used to filter results here).
 
     Returns:
-        list: All master instrument records for the user.
+        list: Every master instrument record, regardless of creator.
     """
-    response = database.supabase.table("master_instruments").select("*").eq(
-        "user_id", user_id
-    ).execute()
+    response = database.supabase.table("master_instruments").select("*").execute()
     return response.data
 
 
