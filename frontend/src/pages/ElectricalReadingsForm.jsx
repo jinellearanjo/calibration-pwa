@@ -301,8 +301,10 @@ function TestCard({ index, test, canRemove, formDisabled, onFieldChange, onReadi
 
       <div style={{ display: "flex", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
         <div style={{ flex: 1, minWidth: 160, marginBottom: 12 }}>
-          <label style={{ display: "block", fontSize: 12, fontWeight: 500, marginBottom: 4 }}>Function Type</label>
+          <label htmlFor={`test-${index}-function_type`} style={{ display: "block", fontSize: 12, fontWeight: 500, marginBottom: 4 }}>Function Type</label>
           <select
+            id={`test-${index}-function_type`}
+            name={`test-${index}-function_type`}
             value={test.function_type}
             disabled={formDisabled}
             onChange={e => onFieldChange("function_type", e.target.value)}
@@ -312,20 +314,20 @@ function TestCard({ index, test, canRemove, formDisabled, onFieldChange, onReadi
             {FUNCTION_TYPES.map(ft => <option key={ft} value={ft}>{ft}</option>)}
           </select>
         </div>
-        <SmallField label="Range Label" value={test.range_label} onChange={v => onFieldChange("range_label", v)} disabled={formDisabled} placeholder="e.g. 200mV" />
-        <SmallField label="Nominal Value" value={test.nominal_value} onChange={v => onFieldChange("nominal_value", v)} type="number" disabled={formDisabled} />
-        <SmallField label="Unit" value={test.unit} onChange={v => onFieldChange("unit", v)} disabled={formDisabled} placeholder="e.g. mV" />
+        <SmallField id={`test-${index}-range_label`} label="Range Label" value={test.range_label} onChange={v => onFieldChange("range_label", v)} disabled={formDisabled} placeholder="e.g. 200mV" />
+        <SmallField id={`test-${index}-nominal_value`} label="Nominal Value" value={test.nominal_value} onChange={v => onFieldChange("nominal_value", v)} type="number" disabled={formDisabled} />
+        <SmallField id={`test-${index}-unit`} label="Unit" value={test.unit} onChange={v => onFieldChange("unit", v)} disabled={formDisabled} placeholder="e.g. mV" />
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0 16px", marginBottom: 16 }}>
-        <SmallField label="Uncertainty of Standard Calibrator (Ub1)" value={test.cert_uncertainty_limit} onChange={v => onFieldChange("cert_uncertainty_limit", v)} type="number" disabled={formDisabled} />
-        <SmallField label="Accuracy of Standard Calibrator (Ub2)" value={test.calibrator_accuracy_limit} onChange={v => onFieldChange("calibrator_accuracy_limit", v)} type="number" disabled={formDisabled} />
-        <SmallField label={isCoil ? "Resolution of UUC (Ub4)" : "Resolution of UUC (Ub3)"} value={test.resolution} onChange={v => onFieldChange("resolution", v)} type="number" disabled={formDisabled} />
+        <SmallField id={`test-${index}-cert_uncertainty_limit`} label="Uncertainty of Standard Calibrator (Ub1)" value={test.cert_uncertainty_limit} onChange={v => onFieldChange("cert_uncertainty_limit", v)} type="number" disabled={formDisabled} />
+        <SmallField id={`test-${index}-calibrator_accuracy_limit`} label="Accuracy of Standard Calibrator (Ub2)" value={test.calibrator_accuracy_limit} onChange={v => onFieldChange("calibrator_accuracy_limit", v)} type="number" disabled={formDisabled} />
+        <SmallField id={`test-${index}-resolution`} label={isCoil ? "Resolution of UUC (Ub4)" : "Resolution of UUC (Ub3)"} value={test.resolution} onChange={v => onFieldChange("resolution", v)} type="number" disabled={formDisabled} />
         {isDCV && (
-          <SmallField label="Thermo-Electric Voltage Limit (Ub4)" value={test.thermo_electric_limit} onChange={v => onFieldChange("thermo_electric_limit", v)} type="number" disabled={formDisabled} />
+          <SmallField id={`test-${index}-thermo_electric_limit`} label="Thermo-Electric Voltage Limit (Ub4)" value={test.thermo_electric_limit} onChange={v => onFieldChange("thermo_electric_limit", v)} type="number" disabled={formDisabled} />
         )}
         {isCoil && (
-          <SmallField label="Accuracy of Current Coil (Ub3)" value={test.coil_accuracy_limit} onChange={v => onFieldChange("coil_accuracy_limit", v)} type="number" disabled={formDisabled} />
+          <SmallField id={`test-${index}-coil_accuracy_limit`} label="Accuracy of Current Coil (Ub3)" value={test.coil_accuracy_limit} onChange={v => onFieldChange("coil_accuracy_limit", v)} type="number" disabled={formDisabled} />
         )}
       </div>
 
@@ -343,6 +345,8 @@ function TestCard({ index, test, canRemove, formDisabled, onFieldChange, onReadi
               <td style={{ padding: "4px 8px", color: "var(--color-muted)" }}>{i + 1}</td>
               <td style={{ padding: "4px 8px" }}>
                 <input
+                  id={`test-${index}-reading_value-${i}`}
+                  name={`test-${index}-reading_value-${i}`}
                   type="text"
                   inputMode="decimal"
                   value={r.reading_value}
@@ -377,14 +381,16 @@ function TestCard({ index, test, canRemove, formDisabled, onFieldChange, onReadi
   );
 }
 
-function SmallField({ label, value, onChange, type = "text", disabled, placeholder }) {
+function SmallField({ id, label, value, onChange, type = "text", disabled, placeholder }) {
   const isNumeric = type === "number";
   return (
     <div style={{ flex: 1, minWidth: 140, marginBottom: 12 }}>
-      <label style={{ display: "block", fontSize: 12, fontWeight: 500, marginBottom: 4, color: "var(--color-text)" }}>
+      <label htmlFor={id} style={{ display: "block", fontSize: 12, fontWeight: 500, marginBottom: 4, color: "var(--color-text)" }}>
         {label}
       </label>
       <input
+        id={id}
+        name={id}
         type={isNumeric ? "text" : type}
         inputMode={isNumeric ? "decimal" : undefined}
         value={value}

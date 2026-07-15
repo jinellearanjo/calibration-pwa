@@ -177,7 +177,7 @@ export default function MasterForm({
             <button type="button" onClick={handleUploadClick} style={outlineButtonStyle(TOKEN.colorPrimary, false)}>
               <UploadIcon />Upload Reference Format Template (.pdf / .txt)
             </button>
-            <input ref={fileInputRef} type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={handleFileChange} />
+            <input id="master-certificate-file" name="master-certificate-file" ref={fileInputRef} type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={handleFileChange} />
           </div>
 
           <div style={{ marginBottom: "20px" }}>

@@ -478,17 +478,20 @@ function RepeatabilitySection({ repeatability, updateField, updateReading, onSub
 
           <div style={{ display: "flex", gap: 16, marginBottom: 16 }}>
             <SmallField
+              id={`${tp.key}-nominal_load`}
               label="Nominal Load"
               value={repeatability[tp.key].nominal_load}
               onChange={v => updateField(tp.key, "nominal_load", v)}
               type="number"
             />
             <SmallField
+              id={`${tp.key}-unit`}
               label="Unit"
               value={repeatability[tp.key].unit}
               onChange={v => updateField(tp.key, "unit", v)}
             />
             <SmallField
+              id={`${tp.key}-standard_weights_uncertainty`}
               label="Standard Weights Uncertainty"
               value={repeatability[tp.key].standard_weights_uncertainty}
               onChange={v => updateField(tp.key, "standard_weights_uncertainty", v)}
@@ -511,6 +514,8 @@ function RepeatabilitySection({ repeatability, updateField, updateReading, onSub
                   <td style={{ padding: "4px 8px", color: "var(--color-muted)" }}>{i + 1}</td>
                   <td style={{ padding: "4px 8px" }}>
                     <input
+                      id={`${tp.key}-reading_before-${i}`}
+                      name={`${tp.key}-reading_before-${i}`}
                       type="text"
                       inputMode="decimal"
                       value={r.reading_before}
@@ -520,6 +525,8 @@ function RepeatabilitySection({ repeatability, updateField, updateReading, onSub
                   </td>
                   <td style={{ padding: "4px 8px" }}>
                     <input
+                      id={`${tp.key}-reading_with_load-${i}`}
+                      name={`${tp.key}-reading_with_load-${i}`}
                       type="text"
                       inputMode="decimal"
                       value={r.reading_with_load}
@@ -529,6 +536,8 @@ function RepeatabilitySection({ repeatability, updateField, updateReading, onSub
                   </td>
                   <td style={{ padding: "4px 8px" }}>
                     <input
+                      id={`${tp.key}-reading_after-${i}`}
+                      name={`${tp.key}-reading_after-${i}`}
                       type="text"
                       inputMode="decimal"
                       value={r.reading_after}
@@ -578,19 +587,19 @@ function OffCenterSection({ offCenter, updateField, onSubmit, canSubmit, isSubmi
               <tr key={p.key}>
                 <td style={{ padding: "4px 8px", fontWeight: 500 }}>{p.label}</td>
                 <td style={{ padding: "4px 8px" }}>
-                  <input type="text" inputMode="decimal" value={offCenter[p.key].nominal_load} onChange={e => { if (isValidDecimalInProgress(e.target.value)) updateField(p.key, "nominal_load", e.target.value); }} style={{ width: "100%" }} />
+                  <input id={`offcenter-${p.key}-nominal_load`} name={`offcenter-${p.key}-nominal_load`} type="text" inputMode="decimal" value={offCenter[p.key].nominal_load} onChange={e => { if (isValidDecimalInProgress(e.target.value)) updateField(p.key, "nominal_load", e.target.value); }} style={{ width: "100%" }} />
                 </td>
                 <td style={{ padding: "4px 8px" }}>
-                  <input type="text" value={offCenter[p.key].unit} onChange={e => updateField(p.key, "unit", e.target.value)} style={{ width: "100%" }} />
+                  <input id={`offcenter-${p.key}-unit`} name={`offcenter-${p.key}-unit`} type="text" value={offCenter[p.key].unit} onChange={e => updateField(p.key, "unit", e.target.value)} style={{ width: "100%" }} />
                 </td>
                 <td style={{ padding: "4px 8px" }}>
-                  <input type="text" inputMode="decimal" value={offCenter[p.key].reading_before} onChange={e => { if (isValidDecimalInProgress(e.target.value)) updateField(p.key, "reading_before", e.target.value); }} style={{ width: "100%" }} />
+                  <input id={`offcenter-${p.key}-reading_before`} name={`offcenter-${p.key}-reading_before`} type="text" inputMode="decimal" value={offCenter[p.key].reading_before} onChange={e => { if (isValidDecimalInProgress(e.target.value)) updateField(p.key, "reading_before", e.target.value); }} style={{ width: "100%" }} />
                 </td>
                 <td style={{ padding: "4px 8px" }}>
-                  <input type="text" inputMode="decimal" value={offCenter[p.key].reading_with_load} onChange={e => { if (isValidDecimalInProgress(e.target.value)) updateField(p.key, "reading_with_load", e.target.value); }} style={{ width: "100%" }} />
+                  <input id={`offcenter-${p.key}-reading_with_load`} name={`offcenter-${p.key}-reading_with_load`} type="text" inputMode="decimal" value={offCenter[p.key].reading_with_load} onChange={e => { if (isValidDecimalInProgress(e.target.value)) updateField(p.key, "reading_with_load", e.target.value); }} style={{ width: "100%" }} />
                 </td>
                 <td style={{ padding: "4px 8px" }}>
-                  <input type="text" inputMode="decimal" value={offCenter[p.key].reading_after} onChange={e => { if (isValidDecimalInProgress(e.target.value)) updateField(p.key, "reading_after", e.target.value); }} style={{ width: "100%" }} />
+                  <input id={`offcenter-${p.key}-reading_after`} name={`offcenter-${p.key}-reading_after`} type="text" inputMode="decimal" value={offCenter[p.key].reading_after} onChange={e => { if (isValidDecimalInProgress(e.target.value)) updateField(p.key, "reading_after", e.target.value); }} style={{ width: "100%" }} />
                 </td>
               </tr>
             ))}
@@ -631,10 +640,10 @@ function HysteresisSection({ hysteresis, updateField, onSubmit, canSubmit, isSub
               <tr key={p.key}>
                 <td style={{ padding: "4px 8px", fontWeight: 500 }}>{i + 1}. {p.label}</td>
                 <td style={{ padding: "4px 8px" }}>
-                  <input type="text" inputMode="decimal" value={hysteresis[p.key].reading_value} onChange={e => { if (isValidDecimalInProgress(e.target.value)) updateField(p.key, "reading_value", e.target.value); }} style={{ width: "100%" }} />
+                  <input id={`hysteresis-${p.key}-reading_value`} name={`hysteresis-${p.key}-reading_value`} type="text" inputMode="decimal" value={hysteresis[p.key].reading_value} onChange={e => { if (isValidDecimalInProgress(e.target.value)) updateField(p.key, "reading_value", e.target.value); }} style={{ width: "100%" }} />
                 </td>
                 <td style={{ padding: "4px 8px" }}>
-                  <input type="text" value={hysteresis[p.key].unit} onChange={e => updateField(p.key, "unit", e.target.value)} style={{ width: "100%" }} />
+                  <input id={`hysteresis-${p.key}-unit`} name={`hysteresis-${p.key}-unit`} type="text" value={hysteresis[p.key].unit} onChange={e => updateField(p.key, "unit", e.target.value)} style={{ width: "100%" }} />
                 </td>
               </tr>
             ))}
@@ -647,15 +656,17 @@ function HysteresisSection({ hysteresis, updateField, onSubmit, canSubmit, isSub
   );
 }
 
-function SmallField({ label, value, onChange, type = "text" }) {
+function SmallField({ id, label, value, onChange, type = "text" }) {
   const isNumeric = type === "number";
   return (
     <div style={{ flex: 1 }}>
-      <label style={{ display: "block", fontSize: 12, fontWeight: 500, marginBottom: 4, color: "var(--color-text)" }}>
+      <label htmlFor={id} style={{ display: "block", fontSize: 12, fontWeight: 500, marginBottom: 4, color: "var(--color-text)" }}>
         {label}
       </label>
       {isNumeric ? (
         <input
+          id={id}
+          name={id}
           type="text"
           inputMode="decimal"
           value={value}
@@ -663,7 +674,7 @@ function SmallField({ label, value, onChange, type = "text" }) {
           style={{ width: "100%" }}
         />
       ) : (
-        <input type={type} value={value} onChange={e => onChange(e.target.value)} style={{ width: "100%" }} />
+        <input id={id} name={id} type={type} value={value} onChange={e => onChange(e.target.value)} style={{ width: "100%" }} />
       )}
     </div>
   );

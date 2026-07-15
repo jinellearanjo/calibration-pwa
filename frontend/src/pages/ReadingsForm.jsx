@@ -228,9 +228,9 @@ function ReadingsForm({
                       <td style={{ ...tdStyle, fontFamily: "var(--font-mono)", fontWeight: 600, color: "var(--color-accent)" }}>
                         {String(row.point_number).padStart(2, "0")}
                       </td>
-                      <td style={tdStyle}><input type="text" inputMode="decimal" value={row.nominal_value} disabled={formDisabled} onChange={e => { if (isValidDecimalInProgress(e.target.value)) updateRow(index, "nominal_value", e.target.value); }} style={inputStyle} /></td>
-                      <td style={tdStyle}><input type="text" inputMode="decimal" value={row.measured_value_up} disabled={formDisabled} onChange={e => { if (isValidDecimalInProgress(e.target.value)) updateRow(index, "measured_value_up", e.target.value); }} style={inputStyle} /></td>
-                      <td style={tdStyle}><input type="text" inputMode="decimal" value={row.measured_value_down} disabled={formDisabled} onChange={e => { if (isValidDecimalInProgress(e.target.value)) updateRow(index, "measured_value_down", e.target.value); }} style={inputStyle} /></td>
+                      <td style={tdStyle}><input id={`nominal_value-${index}`} name={`nominal_value-${index}`} type="text" inputMode="decimal" value={row.nominal_value} disabled={formDisabled} onChange={e => { if (isValidDecimalInProgress(e.target.value)) updateRow(index, "nominal_value", e.target.value); }} style={inputStyle} /></td>
+                      <td style={tdStyle}><input id={`measured_value_up-${index}`} name={`measured_value_up-${index}`} type="text" inputMode="decimal" value={row.measured_value_up} disabled={formDisabled} onChange={e => { if (isValidDecimalInProgress(e.target.value)) updateRow(index, "measured_value_up", e.target.value); }} style={inputStyle} /></td>
+                      <td style={tdStyle}><input id={`measured_value_down-${index}`} name={`measured_value_down-${index}`} type="text" inputMode="decimal" value={row.measured_value_down} disabled={formDisabled} onChange={e => { if (isValidDecimalInProgress(e.target.value)) updateRow(index, "measured_value_down", e.target.value); }} style={inputStyle} /></td>
                       <td style={{ ...tdStyle, textAlign: "center", fontFamily: "var(--font-mono)", color: row.mean_error !== null ? "var(--color-text)" : "var(--color-muted)" }}>
                         {row.mean_error !== null ? `±${row.mean_error}` : "—"}
                       </td>

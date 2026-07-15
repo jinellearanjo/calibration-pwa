@@ -60,11 +60,14 @@ function Login() {
         </div>
 
         <div style={{ marginBottom: 16 }}>
-          <label style={{ display: "block", fontSize: 13, fontWeight: 500, marginBottom: 6, color: "var(--color-text)" }}>
+          <label htmlFor="email" style={{ display: "block", fontSize: 13, fontWeight: 500, marginBottom: 6, color: "var(--color-text)" }}>
             Email
           </label>
           <input
+            id="email"
+            name="email"
             type="email"
+            autoComplete="username"
             placeholder="you@example.com"
             value={email}
             onChange={e => setEmail(e.target.value)}
@@ -72,11 +75,14 @@ function Login() {
         </div>
 
         <div style={{ marginBottom: 24 }}>
-          <label style={{ display: "block", fontSize: 13, fontWeight: 500, marginBottom: 6, color: "var(--color-text)" }}>
+          <label htmlFor="password" style={{ display: "block", fontSize: 13, fontWeight: 500, marginBottom: 6, color: "var(--color-text)" }}>
             Password
           </label>
           <input
+            id="password"
+            name="password"
             type="password"
+            autoComplete="current-password"
             placeholder="••••••••"
             value={password}
             onChange={e => setPassword(e.target.value)}

@@ -340,6 +340,7 @@ function SetpointCard({ index, setpoint, subtype, canRemove, formDisabled, onFie
 
       <div style={{ display: "flex", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
         <SmallField
+          id={`setpoint-${index}-setpoint_label`}
           label="Setpoint Label"
           value={setpoint.setpoint_label}
           onChange={v => onFieldChange("setpoint_label", v)}
@@ -347,6 +348,7 @@ function SetpointCard({ index, setpoint, subtype, canRemove, formDisabled, onFie
           placeholder="e.g. minus_15c"
         />
         <SmallField
+          id={`setpoint-${index}-nominal_temperature`}
           label="Nominal Temperature"
           value={setpoint.nominal_temperature}
           onChange={v => onFieldChange("nominal_temperature", v)}
@@ -354,6 +356,7 @@ function SetpointCard({ index, setpoint, subtype, canRemove, formDisabled, onFie
           disabled={formDisabled}
         />
         <SmallField
+          id={`setpoint-${index}-unit`}
           label="Unit"
           value={setpoint.unit}
           onChange={v => onFieldChange("unit", v)}
@@ -362,14 +365,14 @@ function SetpointCard({ index, setpoint, subtype, canRemove, formDisabled, onFie
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0 16px", marginBottom: 16 }}>
-        <SmallField label="Uncertainty of Standard (Ub1)" value={setpoint.standard_uncertainty} onChange={v => onFieldChange("standard_uncertainty", v)} type="number" disabled={formDisabled} />
-        <SmallField label="Accuracy of Standard (Ub2)" value={setpoint.standard_accuracy} onChange={v => onFieldChange("standard_accuracy", v)} type="number" disabled={formDisabled} />
-        <SmallField label="Drift of Standard (Ub3)" value={setpoint.drift_standard_uncertainty} onChange={v => onFieldChange("drift_standard_uncertainty", v)} type="number" disabled={formDisabled} />
-        <SmallField label="Hysteresis (Ub5)" value={setpoint.hysteresis_value} onChange={v => onFieldChange("hysteresis_value", v)} type="number" disabled={formDisabled} />
-        <SmallField label="Bath Stability (Ub6)" value={setpoint.bath_stability_value} onChange={v => onFieldChange("bath_stability_value", v)} type="number" disabled={formDisabled} />
-        <SmallField label="Bath Uniformity (Ub7)" value={setpoint.bath_uniformity_value} onChange={v => onFieldChange("bath_uniformity_value", v)} type="number" disabled={formDisabled} />
+        <SmallField id={`setpoint-${index}-standard_uncertainty`} label="Uncertainty of Standard (Ub1)" value={setpoint.standard_uncertainty} onChange={v => onFieldChange("standard_uncertainty", v)} type="number" disabled={formDisabled} />
+        <SmallField id={`setpoint-${index}-standard_accuracy`} label="Accuracy of Standard (Ub2)" value={setpoint.standard_accuracy} onChange={v => onFieldChange("standard_accuracy", v)} type="number" disabled={formDisabled} />
+        <SmallField id={`setpoint-${index}-drift_standard_uncertainty`} label="Drift of Standard (Ub3)" value={setpoint.drift_standard_uncertainty} onChange={v => onFieldChange("drift_standard_uncertainty", v)} type="number" disabled={formDisabled} />
+        <SmallField id={`setpoint-${index}-hysteresis_value`} label="Hysteresis (Ub5)" value={setpoint.hysteresis_value} onChange={v => onFieldChange("hysteresis_value", v)} type="number" disabled={formDisabled} />
+        <SmallField id={`setpoint-${index}-bath_stability_value`} label="Bath Stability (Ub6)" value={setpoint.bath_stability_value} onChange={v => onFieldChange("bath_stability_value", v)} type="number" disabled={formDisabled} />
+        <SmallField id={`setpoint-${index}-bath_uniformity_value`} label="Bath Uniformity (Ub7)" value={setpoint.bath_uniformity_value} onChange={v => onFieldChange("bath_uniformity_value", v)} type="number" disabled={formDisabled} />
         {subtype === "TCK" && (
-          <SmallField label="Wire Homogeneity (Ub8)" value={setpoint.wire_homogeneity_value} onChange={v => onFieldChange("wire_homogeneity_value", v)} type="number" disabled={formDisabled} />
+          <SmallField id={`setpoint-${index}-wire_homogeneity_value`} label="Wire Homogeneity (Ub8)" value={setpoint.wire_homogeneity_value} onChange={v => onFieldChange("wire_homogeneity_value", v)} type="number" disabled={formDisabled} />
         )}
       </div>
 
@@ -386,6 +389,8 @@ function SetpointCard({ index, setpoint, subtype, canRemove, formDisabled, onFie
               <td style={{ padding: "4px 8px", color: "var(--color-muted)" }}>{i + 1}</td>
               <td style={{ padding: "4px 8px" }}>
                 <input
+                  id={`setpoint-${index}-reading_value-${i}`}
+                  name={`setpoint-${index}-reading_value-${i}`}
                   type="text"
                   inputMode="decimal"
                   value={r.reading_value}
@@ -402,14 +407,16 @@ function SetpointCard({ index, setpoint, subtype, canRemove, formDisabled, onFie
   );
 }
 
-function SmallField({ label, value, onChange, type = "text", disabled, placeholder }) {
+function SmallField({ id, label, value, onChange, type = "text", disabled, placeholder }) {
   const isNumeric = type === "number";
   return (
     <div style={{ flex: 1, minWidth: 140, marginBottom: 12 }}>
-      <label style={{ display: "block", fontSize: 12, fontWeight: 500, marginBottom: 4, color: "var(--color-text)" }}>
+      <label htmlFor={id} style={{ display: "block", fontSize: 12, fontWeight: 500, marginBottom: 4, color: "var(--color-text)" }}>
         {label}
       </label>
       <input
+        id={id}
+        name={id}
         type={isNumeric ? "text" : type}
         inputMode={isNumeric ? "decimal" : undefined}
         value={value}
