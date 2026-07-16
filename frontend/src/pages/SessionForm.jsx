@@ -26,12 +26,17 @@ function SessionForm() {
   const passedInstrumentId = location.state?.instrumentId;
   const passedInstrumentType = location.state?.instrumentType;
   const passedCalibrationReference = location.state?.calibrationReference;
+  // Set when arriving from MasterForm's "Add Master Instrument" flow
+  // (see InstrumentForm.jsx's Step 01->02->03 prompt and MasterForm.jsx's
+  // continueSession handling) - pre-selects the master instrument the
+  // user just created instead of leaving the dropdown empty.
+  const passedMasterInstrumentId = location.state?.masterInstrumentId;
   const editMode = location.state?.editMode || false;
   const editSessionId = location.state?.sessionId || null;
 
   const [formData, setFormData] = useState({
     instrument_id: passedInstrumentId || "",
-    master_instrument_id: "",
+    master_instrument_id: passedMasterInstrumentId || "",
     date: "",
     technician: "",
     temperature_c: "",

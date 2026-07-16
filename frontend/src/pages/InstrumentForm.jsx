@@ -31,6 +31,13 @@ function InstrumentForm() {
   const { setIsDirty, safeNavigate } = useUnsavedWarning();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loadingEdit, setLoadingEdit] = useState(false);
+  // Set (non-edit-mode only) right after a successful instrument
+  // registration, instead of navigating straight to /session - shows the
+  // "Add Master Instrument or Skip" prompt below, so the jump from
+  // Step 01 to Step 03 doesn't happen without ever passing through
+  // Step 02 (Master Instrument), which used to feel like the flow had
+  // skipped a step entirely.
+  const [pendingSessionState, setPendingSessionState] = useState(null);
 
   // Edit mode fields from navigation state
   const editMode = location.state?.editMode || false;
@@ -218,14 +225,22 @@ function InstrumentForm() {
       }
 
       setIsDirty(false);
-      navigate("/session", {
-        state: {
-          instrumentId,
-          instrumentType: uucData.type,
-          calibrationReference: refData,
-          ...(editMode ? { editMode: true, sessionId: editSessionId } : {}),
-        },
-      });
+
+      const sessionState = {
+        instrumentId,
+        instrumentType: uucData.type,
+        calibrationReference: refData,
+        ...(editMode ? { editMode: true, sessionId: editSessionId } : {}),
+      };
+
+      if (editMode) {
+        // Editing an existing session's instrument - not a fresh
+        // registration, so the "Add Master Instrument or Skip" prompt
+        // doesn't apply here; go straight back to the session as before.
+        navigate("/session", { state: sessionState });
+      } else {
+        setPendingSessionState(sessionState);
+      }
     } catch (err) {
       setErrors(prev => ({ ...prev, submit: err.message }));
     } finally {
@@ -234,6 +249,42 @@ function InstrumentForm() {
   }
 
   if (loadingEdit) return <Spinner message="Loading session data..." />;
+
+  if (pendingSessionState) {
+    return (
+      <div style={{ minHeight: "100vh", background: "var(--color-bg)" }}>
+        <Navbar />
+        <div style={{ maxWidth: 560, margin: "0 auto", padding: "48px 32px" }}>
+          <div style={{ marginBottom: 32 }}>
+            <p style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--color-accent)", marginBottom: 8 }}>
+              Step 01 Complete
+            </p>
+            <h1 style={{ fontSize: 26, fontWeight: 700, color: "var(--color-primary)", marginBottom: 8 }}>
+              Instrument Registered
+            </h1>
+            <p style={{ color: "var(--color-muted)", fontSize: 14 }}>
+              Do you want to add the master/reference standard used for this calibration now, or skip and add one later from the session screen?
+            </p>
+          </div>
+
+          <div style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)", borderRadius: "var(--radius)", padding: "28px 32px", boxShadow: "var(--shadow-sm)", display: "flex", flexDirection: "column", gap: 12 }}>
+            <button
+              onClick={() => navigate("/master", { state: { continueSession: pendingSessionState } })}
+              style={{ padding: "11px", background: "var(--color-primary)", color: "white", border: "none", borderRadius: "var(--radius)", fontWeight: 600, fontSize: 14, cursor: "pointer" }}
+            >
+              Add Master Instrument
+            </button>
+            <button
+              onClick={() => navigate("/session", { state: pendingSessionState })}
+              style={{ padding: "11px", background: "white", color: "var(--color-text)", border: "1px solid var(--color-border)", borderRadius: "var(--radius)", fontWeight: 500, fontSize: 14, cursor: "pointer" }}
+            >
+              Skip This Step
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--color-bg)" }}>

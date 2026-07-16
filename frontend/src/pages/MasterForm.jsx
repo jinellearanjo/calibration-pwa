@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState, useEffect } from "react"
+import { useNavigate, useLocation } from "react-router-dom"
 import { saveMaster, deleteMaster, selectMaster, listMasterInstruments } from "../api"
 import Navbar from "../components/Navbar"
 import { decimalInputHandler } from "../utils/numericInput"
@@ -49,6 +50,17 @@ export default function MasterForm({
   onMasterSaved,
   onMasterDeleted,
 }) {
+  const navigate = useNavigate()
+  const location = useLocation()
+  // If present, this page was reached from InstrumentForm's "Add Master
+  // Instrument or Skip" prompt (Step 01 -> 02 -> 03) rather than
+  // navigated to directly (e.g. via the Navbar, for general registry
+  // management) - carries everything SessionForm needs so saving a
+  // master here can continue straight on to Step 03, with the new
+  // master pre-selected, instead of leaving the user stranded on this
+  // page with no way back into the flow they came from.
+  const continueSession = location.state?.continueSession || null;
+
   const [masters, setMasters] = useState([])
   const [formData, setFormData] = useState(EMPTY_MASTER)
   const [errors, setErrors] = useState({})
@@ -96,7 +108,17 @@ export default function MasterForm({
     if (Object.values(freshErrors).some(Boolean)) return
     setIsSaving(true)
     try {
-      await saveMaster(formData)
+      const saved = await saveMaster(formData)
+      if (continueSession) {
+        // saved is response.data from a Supabase insert - always a list,
+        // even for one row (same shape as every other insert_* endpoint
+        // in this app) - the newly created master's id is saved[0].id.
+        const newMasterId = saved?.[0]?.id;
+        navigate("/session", {
+          state: { ...continueSession, masterInstrumentId: newMasterId },
+        });
+        return;
+      }
       const data = await listMasterInstruments()
       setMasters(data.map(m => ({ id: m.id, label: m.name, data: m })))
       onMasterSaved?.()
@@ -140,6 +162,12 @@ export default function MasterForm({
           <p style={{ color: "var(--color-muted)", fontSize: 14 }}>Search, select, or register the reference standard used for this calibration.</p>
         </div>
 
+        {continueSession && (
+          <div style={{ padding: "14px 16px", background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: "var(--radius)", color: "var(--color-primary)", fontSize: 13, marginBottom: 24 }}>
+            You just registered an instrument. Add its master/reference standard here now, or skip this step and add one later from the session screen.
+          </div>
+        )}
+
         <section aria-labelledby="master-form-heading" style={{ fontFamily: TOKEN.fontFamily, fontSize: TOKEN.fontSize, color: TOKEN.colorText, background: TOKEN.colorBg, borderRadius: TOKEN.radius, border: `1px solid ${TOKEN.colorBorder}`, padding: "24px" }}>
           <h2 id="master-form-heading" style={{ margin: "0 0 20px", fontSize: "1.125rem", fontWeight: 600 }}>Master Traceability Details</h2>
 
@@ -168,6 +196,15 @@ export default function MasterForm({
             <button type="button" disabled={hasValidationErrors || isSaving} onClick={handleSave} style={primaryButtonStyle(hasValidationErrors || isSaving)}>
               {isSaving ? "Saving…" : "Save Current"}
             </button>
+            {continueSession && (
+              <button
+                type="button"
+                onClick={() => navigate("/session", { state: continueSession })}
+                style={outlineButtonStyle(TOKEN.colorPrimary, false)}
+              >
+                Skip This Step
+              </button>
+            )}
           </div>
 
           <div style={{ display: "flex", gap: TOKEN.gap, flexWrap: "wrap", marginBottom: TOKEN.gap }}>
