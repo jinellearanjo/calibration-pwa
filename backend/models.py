@@ -276,7 +276,12 @@ class WeighingOffCenterReadingCreate(BaseModel):
     Five fixed positions are tested at a chosen load, typically 50% of range.
 
     Attributes:
-        session_id: UUID of the parent calibration session.
+        session_id: UUID of the parent calibration session. Optional because
+            the client never sends it per-reading - it's already in the URL
+            path (POST /api/sessions/{session_id}/weighing/off-center) and is
+            filled in server-side before insert. Requiring it here caused
+            every submission to fail 422 validation before the endpoint body
+            ever ran, since the frontend correctly never included it.
         position: Which of the five fixed positions this reading is for.
         nominal_load: The nominal load applied for this test.
         unit: Unit of measurement.
@@ -284,7 +289,7 @@ class WeighingOffCenterReadingCreate(BaseModel):
         reading_with_load: Reading with the nominal load applied at this position.
         reading_after: Zero/tare reading after load is removed.
     """
-    session_id: UUID
+    session_id: Optional[UUID] = None
     position: str  # 'center' | 'front' | 'back' | 'left' | 'right'
     nominal_load: float
     unit: str
@@ -300,13 +305,16 @@ class WeighingHysteresisReadingCreate(BaseModel):
     -> half_load_descending -> zero_after.
 
     Attributes:
-        session_id: UUID of the parent calibration session.
+        session_id: UUID of the parent calibration session. Optional for the
+            same reason as WeighingOffCenterReadingCreate.session_id - it's
+            supplied via the URL path and filled in server-side, never sent
+            per-reading by the client.
         sequence_order: Position in the 5-step sequence (1-5).
         phase: Which phase of the sequence this reading represents.
         reading_value: The recorded reading at this phase.
         unit: Unit of measurement.
     """
-    session_id: UUID
+    session_id: Optional[UUID] = None
     sequence_order: int
     phase: str  # 'zero_before' | 'half_load_ascending' | 'full_load' | 'half_load_descending' | 'zero_after'
     reading_value: float

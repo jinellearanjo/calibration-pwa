@@ -66,4 +66,19 @@ def test_create_master_instrument_still_records_creator_for_audit():
 
     assert resp.status_code == 200
     inserted_data = mock_supabase.table.return_value.insert.call_args[0][0]
-    assert inserted_data["user_id"] == "user-a"
+    # Assert against whatever get_current_user_id currently resolves to,
+    # not a hardcoded literal. app.dependency_overrides is a single dict
+    # shared by every test module across the whole suite (all bound to
+    # the same main.app instance), and pytest imports every test file
+    # during collection before any test executes - so whichever file is
+    # collected last "wins" the override for everyone. Hardcoding a
+    # literal here only ever worked by alphabetical luck.
+    expected_user_id = app.dependency_overrides[auth.get_current_user_id]()
+    assert inserted_data["user_id"] == expected_user_id    # not a hardcoded literal. app.dependency_overrides is a single dict
+    # shared by every test module across the whole suite (all bound to
+    # the same main.app instance), and pytest imports every test file
+    # during collection before any test executes - so whichever file is
+    # collected last "wins" the override for everyone. Hardcoding a
+    # literal here only ever worked by alphabetical luck.
+    expected_user_id = app.dependency_overrides[auth.get_current_user_id]()
+    assert inserted_data["user_id"] == expected_user_id
