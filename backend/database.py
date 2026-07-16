@@ -95,11 +95,14 @@ def get_session(session_id: str) -> dict:
 def get_readings(session_id: str) -> list:
     """Fetch all readings for a calibration session.
 
-    Applies to Pressure and Electrical sessions. Weighing sessions store
-    their raw data in the weighing_* tables instead, and Temperature
-    sessions store theirs in temperature_repeatability_tests/readings -
-    see get_weighing_repeatability_tests, get_weighing_off_center_readings,
-    get_weighing_hysteresis_readings, and get_temperature_repeatability_tests.
+    Applies to Pressure sessions only. Weighing sessions store their raw
+    data in the weighing_* tables, Temperature in
+    temperature_repeatability_tests/readings, and Electrical in
+    electrical_tests/readings - each has its own dedicated tables, none
+    of them use this generic readings table. (This comment previously
+    claimed Electrical used this table too - already flagged and fixed
+    once before for this exact function; re-confirmed false by reading
+    formula_manager.py's dispatch logic directly.)
 
     Args:
         session_id: The UUID of the calibration session.
@@ -112,6 +115,29 @@ def get_readings(session_id: str) -> list:
     """
     response = supabase.table("readings").select("*").eq("session_id", session_id).order("point_number").execute()
     return response.data
+
+
+def delete_readings(session_id: str) -> None:
+    """Delete every reading row for a session.
+
+    Called before re-inserting a fresh set of readings (see
+    create_reading's caller in ReadingsForm.jsx's submit flow), so
+    resubmitting the same session doesn't stack duplicate rows on top of
+    whatever's already there - the exact bug that was already found and
+    fixed once for uncertainty_budgets (Round 10's delete_uncertainty_
+    budgets) but was never extended to the readings themselves. Without
+    this, submitting the same Pressure session's readings twice (e.g. a
+    user navigating back to Step 04 and resubmitting) silently created a
+    second full set of rows for the same point numbers every time.
+
+    Args:
+        session_id: The UUID of the calibration session whose readings
+            should be cleared.
+
+    Raises:
+        Exception: If the delete query fails.
+    """
+    supabase.table("readings").delete().eq("session_id", session_id).execute()
 
 
 def get_uncertainty_budgets(session_id: str) -> list:

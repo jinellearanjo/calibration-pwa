@@ -176,6 +176,17 @@ export async function getReadings(sessionId) {
   return request(`/api/sessions/${sessionId}/readings`);
 }
 
+/**
+ * Delete all readings for a session, before resubmitting a fresh set -
+ * prevents resubmitting the same session from stacking duplicate rows
+ * on top of whatever's already there.
+ * @param {string} sessionId - UUID of the session.
+ * @returns {Promise<Object>} Confirmation message.
+ */
+export async function deleteReadingsForSession(sessionId) {
+  return request(`/api/sessions/${sessionId}/readings`, { method: "DELETE" });
+}
+
 // ── Master Instruments ────────────────────────────────────────────────────────
 
 /**

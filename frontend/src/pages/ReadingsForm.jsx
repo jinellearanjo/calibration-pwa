@@ -4,7 +4,7 @@ import Navbar from "../components/Navbar";
 import SessionPicker from "../components/SessionPicker";
 import { useUnsavedWarning } from "../hooks/useUnsavedWarning";
 import { isValidDecimalInProgress } from "../utils/numericInput";
-import { createReading, getReadings } from "../api";
+import { createReading, getReadings, deleteReadingsForSession } from "../api";
 
 /**
  * ReadingsForm component.
@@ -141,6 +141,13 @@ function ReadingsForm({
     setSubmitError(null);
 
     try {
+      // Clear any existing readings for this session first - without
+      // this, resubmitting (e.g. navigating back to this step and
+      // resubmitting after a correction) stacks a fresh full set of
+      // rows on top of whatever's already there, for the same point
+      // numbers, every single time.
+      await deleteReadingsForSession(effectiveSessionId);
+
       for (const row of rows) {
         if (!row.nominal_value || !row.measured_value_up || !row.measured_value_down) continue;
         await createReading({
