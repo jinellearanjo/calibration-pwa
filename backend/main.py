@@ -528,6 +528,37 @@ def get_session_readings(
     return database.get_readings(str(session_id))
 
 
+@app.delete("/api/sessions/{session_id}/readings")
+def delete_session_readings(
+    session_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Delete all readings for a calibration session.
+
+    Called by the frontend immediately before resubmitting a fresh set
+    of readings (see ReadingsForm.jsx's submit handler), so resubmitting
+    the same session doesn't stack duplicate rows on top of whatever's
+    already there - the exact bug already found and fixed once for
+    uncertainty_budgets (Round 10) but never extended to readings
+    themselves until now.
+
+    Args:
+        session_id: UUID of the session whose readings should be cleared.
+        user_id: UUID of the authenticated user from JWT.
+
+    Returns:
+        dict: A confirmation message.
+
+    Raises:
+        HTTPException: 500 if the delete query fails.
+    """
+    try:
+        database.delete_readings(str(session_id))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Deletion failed: {e}")
+    return {"message": "Readings deleted."}
+
+
 # ── Master Instruments ────────────────────────────────────────────────────────
 
 @app.post("/api/master-instruments")
@@ -719,7 +750,19 @@ def calculate_uncertainty_budget(
     # out a session's last-known-good budgets.
     database.delete_uncertainty_budgets(str(session_id))
 
-    return [database.insert_uncertainty_budget(b) for b in budgets_data]
+    # insert_uncertainty_budget returns response.data, which - like every
+    # other insert_* function in database.py - is always a list even for
+    # a single row (Supabase's own return shape). Every other caller of
+    # these functions unwraps with [0] (see e.g. create_weighing_
+    # repeatability_test's test_record[0]); this one previously didn't,
+    # so the response sent to the frontend was doubly-nested
+    # (a list of one-element lists instead of a flat list of budget
+    # dicts) - CalculationView.jsx's Summary section has no null/undefined
+    # filter on its fields (unlike the Components section, which does),
+    # so it rendered the literal string "undefined" for every summary
+    # value until a subsequent GET (which returns the correctly flat
+    # shape) overwrote the broken state.
+    return [database.insert_uncertainty_budget(b)[0] for b in budgets_data]
 
 
 # ── Weighing: Repeatability test ────────────────────────────────────────────
