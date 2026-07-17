@@ -183,33 +183,50 @@ def get_master_instrument(master_id: str) -> dict:
 def get_calibration_reference(session_id: str) -> dict:
     """Fetch the calibration reference details for a session.
 
+    Uses maybe_single() rather than single(): PostgREST's .single() raises
+    an exception (not a clean "not found") when zero rows match, which
+    previously crashed both call sites below their "if not X: raise 404"
+    checks before those checks ever ran - the unhandled crash also bypassed
+    CORSMiddleware's header injection, which made it show up in the browser
+    as a misleading "blocked by CORS policy" error rather than a normal 404.
+    maybe_single() returns None on zero rows instead, letting the existing
+    callers' None-checks work as originally intended.
+
     Args:
         session_id: The UUID of the calibration session.
 
     Returns:
-        dict: The calibration reference record.
+        dict: The calibration reference record, or None if none exists yet.
 
     Raises:
-        Exception: If the database query fails.
+        Exception: If the database query fails for a reason other than
+            "no matching row".
     """
-    response = supabase.table("calibration_reference").select("*").eq("session_id", session_id).single().execute()
+    response = supabase.table("calibration_reference").select("*").eq("session_id", session_id).maybe_single().execute()
     return response.data
 
 
 def get_acceptance_limit(instrument_type: str, parameter: str) -> dict:
     """Fetch the acceptance limit for a given instrument type and parameter.
 
+    Uses maybe_single() rather than single() - see get_calibration_reference's
+    docstring above for why. validation.py already checks this function's
+    return value for None and responds with a clean "REJECTED, no acceptance
+    limit configured" result; single() previously crashed before that check
+    ever ran whenever an instrument type had no acceptance limit row yet.
+
     Args:
         instrument_type: The type of instrument (e.g. Pressure, Temperature).
         parameter: The parameter being checked (e.g. accuracy).
 
     Returns:
-        dict: The acceptance limit record.
+        dict: The acceptance limit record, or None if none exists yet.
 
     Raises:
-        Exception: If the database query fails.
+        Exception: If the database query fails for a reason other than
+            "no matching row".
     """
-    response = supabase.table("acceptance_limits").select("*").eq("instrument_type", instrument_type).eq("parameter", parameter).single().execute()
+    response = supabase.table("acceptance_limits").select("*").eq("instrument_type", instrument_type).eq("parameter", parameter).maybe_single().execute()
     return response.data
 
 
@@ -396,6 +413,41 @@ def insert_weighing_repeatability_test(test: dict) -> dict:
     return response.data
 
 
+def delete_weighing_repeatability_test_by_key(session_id: str, test_point: str) -> None:
+    """Delete any existing repeatability test (and its readings) for this
+    session and test_point, before inserting a fresh one.
+
+    Unlike off-center/hysteresis, a session can have multiple repeatability
+    tests - one per test_point (near_zero/fifty_percent/hundred_percent) -
+    so this must NOT delete every repeatability test for the session (that
+    would silently wipe out other test points still on record). Deletes
+    only the specific (session_id, test_point) match: its child readings
+    first (keyed by test_id, no reliable DB-level cascade - see
+    delete_calibration_session_cascade's docstring), then the test row
+    itself. A no-op if no existing test matches, which is the normal case
+    for a genuinely new test_point.
+
+    Args:
+        session_id: The UUID of the calibration session.
+        test_point: Which of the three fixed load points to clear before
+            re-inserting ('near_zero' | 'fifty_percent' | 'hundred_percent').
+
+    Raises:
+        Exception: If the database query fails.
+    """
+    existing = (
+        supabase.table("weighing_repeatability_tests")
+        .select("id")
+        .eq("session_id", session_id)
+        .eq("test_point", test_point)
+        .execute()
+        .data
+    )
+    for t in existing:
+        supabase.table("weighing_repeatability_readings").delete().eq("test_id", t["id"]).execute()
+    supabase.table("weighing_repeatability_tests").delete().eq("session_id", session_id).eq("test_point", test_point).execute()
+
+
 def insert_weighing_repeatability_readings(readings: list) -> list:
     """Bulk-insert the 10 readings for a weighing repeatability test.
 
@@ -477,6 +529,27 @@ def get_weighing_off_center_readings(session_id: str) -> list:
     return response.data
 
 
+def delete_weighing_off_center_readings(session_id: str) -> None:
+    """Delete all existing off-center readings for a session.
+
+    Off-center is always submitted as one complete, atomic set of exactly
+    5 rows (one per position) tied only to session_id - there's no
+    sub-key like test_point/setpoint_label to worry about, so a full
+    delete-before-insert (the same shape as Pressure's delete_readings)
+    is safe and correct here. Call this immediately before re-inserting,
+    to fix resubmission stacking duplicate position rows on top of the
+    existing set every time the form is saved again.
+
+    Args:
+        session_id: The UUID of the calibration session whose off-center
+            readings should be cleared before re-inserting.
+
+    Raises:
+        Exception: If the database query fails.
+    """
+    supabase.table("weighing_off_center_readings").delete().eq("session_id", session_id).execute()
+
+
 # ── Weighing: Hysteresis test ────────────────────────────────────────────────
 
 def insert_weighing_hysteresis_readings(readings: list) -> list:
@@ -517,6 +590,24 @@ def get_weighing_hysteresis_readings(session_id: str) -> list:
         .execute()
     )
     return response.data
+
+
+def delete_weighing_hysteresis_readings(session_id: str) -> None:
+    """Delete all existing hysteresis readings for a session.
+
+    Same reasoning as delete_weighing_off_center_readings above:
+    hysteresis is always submitted as one complete, atomic set of exactly
+    5 sequence steps tied only to session_id, so a full delete-before-
+    insert is safe and correct.
+
+    Args:
+        session_id: The UUID of the calibration session whose hysteresis
+            readings should be cleared before re-inserting.
+
+    Raises:
+        Exception: If the database query fails.
+    """
+    supabase.table("weighing_hysteresis_readings").delete().eq("session_id", session_id).execute()
 
 
 # ── CMC bands ─────────────────────────────────────────────────────────────────
@@ -569,6 +660,36 @@ def insert_temperature_repeatability_test(test: dict) -> dict:
     """
     response = supabase.table("temperature_repeatability_tests").insert(test).execute()
     return response.data
+
+
+def delete_temperature_repeatability_test_by_key(session_id: str, setpoint_label: str) -> None:
+    """Delete any existing repeatability test (and its readings) for this
+    session and setpoint_label, before inserting a fresh one.
+
+    Same reasoning as delete_weighing_repeatability_test_by_key: a session
+    can have multiple setpoints tested (e.g. -15C, 110C, 300C, 650C), so
+    only the matching setpoint_label is cleared, not every test for the
+    session.
+
+    Args:
+        session_id: The UUID of the calibration session.
+        setpoint_label: Which setpoint to clear before re-inserting
+            (e.g. 'minus_15c').
+
+    Raises:
+        Exception: If the database query fails.
+    """
+    existing = (
+        supabase.table("temperature_repeatability_tests")
+        .select("id")
+        .eq("session_id", session_id)
+        .eq("setpoint_label", setpoint_label)
+        .execute()
+        .data
+    )
+    for t in existing:
+        supabase.table("temperature_repeatability_readings").delete().eq("test_id", t["id"]).execute()
+    supabase.table("temperature_repeatability_tests").delete().eq("session_id", session_id).eq("setpoint_label", setpoint_label).execute()
 
 
 def insert_temperature_repeatability_readings(readings: list) -> list:
@@ -626,6 +747,39 @@ def insert_electrical_test(test: dict) -> list:
     """
     response = supabase.table("electrical_tests").insert(test).execute()
     return response.data
+
+
+def delete_electrical_test_by_key(session_id: str, function_type: str, range_label: str) -> None:
+    """Delete any existing Electrical test (and its readings) for this
+    session, function_type, and range_label, before inserting a fresh one.
+
+    Same reasoning as the Weighing/Temperature equivalents above: a
+    session can have multiple Electrical tests - one per function-type/
+    range combination (e.g. DCV 20mV, DCV 200mV, ACA 50A) - so only the
+    matching (function_type, range_label) pair is cleared, not every
+    test for the session.
+
+    Args:
+        session_id: The UUID of the calibration session.
+        function_type: The function type to clear before re-inserting
+            (e.g. 'DCV', 'ACA (Coil)').
+        range_label: The range within that function type (e.g. '20mV').
+
+    Raises:
+        Exception: If the database query fails.
+    """
+    existing = (
+        supabase.table("electrical_tests")
+        .select("id")
+        .eq("session_id", session_id)
+        .eq("function_type", function_type)
+        .eq("range_label", range_label)
+        .execute()
+        .data
+    )
+    for t in existing:
+        supabase.table("electrical_readings").delete().eq("test_id", t["id"]).execute()
+    supabase.table("electrical_tests").delete().eq("session_id", session_id).eq("function_type", function_type).eq("range_label", range_label).execute()
 
 
 def insert_electrical_readings(readings: list) -> list:

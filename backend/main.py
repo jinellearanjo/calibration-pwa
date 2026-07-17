@@ -801,6 +801,13 @@ def create_weighing_repeatability_test(
 
     test_data = payload.model_dump()
     test_data["session_id"] = str(session_id)
+    # Clear any existing test for this exact (session, test_point) before
+    # inserting the fresh one - without this, resubmitting the same test
+    # point (e.g. correcting a typo and re-saving) stacked a second full
+    # test+readings set on top of the first every time, rather than
+    # replacing it. Only this test_point is cleared, not the whole
+    # session's repeatability tests, since other test points must survive.
+    database.delete_weighing_repeatability_test_by_key(str(session_id), test_data["test_point"])
     test_record = database.insert_weighing_repeatability_test(test_data)
     # Guards against an empty insert response (e.g. an RLS SELECT policy
     # silently filtering the row back out despite a successful insert -
@@ -876,6 +883,11 @@ def create_weighing_off_center_readings(
         row = r.model_dump()
         row["session_id"] = str(session_id)
         rows.append(row)
+    # Clear any existing off-center readings for this session before
+    # re-inserting - without this, resubmitting stacked a duplicate set
+    # of 5 rows on top of the existing ones every time (the same root
+    # cause originally fixed for Pressure's ReadingsForm.jsx).
+    database.delete_weighing_off_center_readings(str(session_id))
     return database.insert_weighing_off_center_readings(rows)
 
 
@@ -931,6 +943,8 @@ def create_weighing_hysteresis_readings(
         row = r.model_dump()
         row["session_id"] = str(session_id)
         rows.append(row)
+    # Same fix as off-center, above.
+    database.delete_weighing_hysteresis_readings(str(session_id))
     return database.insert_weighing_hysteresis_readings(rows)
 
 
@@ -989,6 +1003,10 @@ def create_temperature_repeatability_test(
 
     test_data = payload.model_dump()
     test_data["session_id"] = str(session_id)
+    # Same fix as create_weighing_repeatability_test above - clear only
+    # this setpoint before inserting, so other setpoints already on
+    # record for this session survive.
+    database.delete_temperature_repeatability_test_by_key(str(session_id), test_data["setpoint_label"])
     test_record = database.insert_temperature_repeatability_test(test_data)
     # See the identical guard in create_weighing_repeatability_test above
     # for why this check exists.
@@ -1063,6 +1081,10 @@ def create_electrical_test(
 
     test_data = payload.model_dump()
     test_data["session_id"] = str(session_id)
+    # Same fix as the Weighing/Temperature endpoints above - clear only
+    # this (function_type, range_label) combination before inserting, so
+    # other function-type/range tests already on record survive.
+    database.delete_electrical_test_by_key(str(session_id), test_data["function_type"], test_data["range_label"])
     test_record = database.insert_electrical_test(test_data)
     # See the identical guard in create_weighing_repeatability_test above
     # for why this check exists.

@@ -688,7 +688,13 @@ def _format_date(raw_date: Any) -> str:
         return "\u2014"
     if isinstance(raw_date, str):
         try:
-            raw_date = datetime.fromisoformat(raw_date)
+            # Python versions below 3.11 reject a trailing "Z" (Zulu/UTC
+            # suffix) in datetime.fromisoformat, even though it's valid
+            # ISO 8601. Currently running Python 3.13 in production so this
+            # hasn't bitten anyone yet, but Supabase timestamps are commonly
+            # returned with a "Z" suffix, so normalizing it here is cheap,
+            # defensive insurance against a future runtime downgrade.
+            raw_date = datetime.fromisoformat(raw_date.replace("Z", "+00:00"))
         except ValueError:
             return str(raw_date)
     return raw_date.strftime("%d %b %Y")

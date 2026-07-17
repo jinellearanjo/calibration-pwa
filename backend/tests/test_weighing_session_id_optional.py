@@ -65,6 +65,7 @@ def test_off_center_succeeds_without_session_id_in_payload():
     session, instrument = _mock_session_and_instrument()
     with patch.object(main.database, "get_session", return_value=session), \
          patch.object(main.database, "get_instrument", return_value=instrument), \
+         patch.object(main.database, "delete_weighing_off_center_readings"), \
          patch.object(main.database, "insert_weighing_off_center_readings", return_value=[]) as mock_insert:
         resp = client.post(
             f"/api/sessions/{SESSION_ID}/weighing/off-center",
@@ -82,6 +83,7 @@ def test_hysteresis_succeeds_without_session_id_in_payload():
     session, instrument = _mock_session_and_instrument()
     with patch.object(main.database, "get_session", return_value=session), \
          patch.object(main.database, "get_instrument", return_value=instrument), \
+         patch.object(main.database, "delete_weighing_hysteresis_readings"), \
          patch.object(main.database, "insert_weighing_hysteresis_readings", return_value=[]) as mock_insert:
         resp = client.post(
             f"/api/sessions/{SESSION_ID}/weighing/hysteresis",
