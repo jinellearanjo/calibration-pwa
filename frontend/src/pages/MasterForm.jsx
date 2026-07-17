@@ -223,10 +223,10 @@ export default function MasterForm({
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: TOKEN.gap }}>
-            <FloatingLabelField id="name" label="Master Instrument Name / Tag *" value={formData.name} onChange={(v) => updateField("name", v)} error={errors.name} />
-            <FloatingLabelField id="make" label="Make" value={formData.make} onChange={(v) => updateField("make", v)} error={errors.make} />
-            <FloatingLabelField id="model" label="Model" value={formData.model} onChange={(v) => updateField("model", v)} error={errors.model} />
-            <FloatingLabelField id="serial_number" label="Serial No." value={formData.serial_number} onChange={(v) => updateField("serial_number", v)} error={errors.serial_number} />
+            <FloatingLabelField id="master-name" label="Master Instrument Name / Tag *" value={formData.name} onChange={(v) => updateField("name", v)} error={errors.name} />
+            <FloatingLabelField id="master-make" label="Make" value={formData.make} onChange={(v) => updateField("make", v)} error={errors.make} />
+            <FloatingLabelField id="master-model" label="Model" value={formData.model} onChange={(v) => updateField("model", v)} error={errors.model} />
+            <FloatingLabelField id="master-serial_number" label="Serial No." value={formData.serial_number} onChange={(v) => updateField("serial_number", v)} error={errors.serial_number} />
             <FloatingLabelField id="asset_number" label="Asset No." value={formData.asset_number} onChange={(v) => updateField("asset_number", v)} error={errors.asset_number} />
             <FloatingLabelField id="master_certificate_number" label="Master's Own Certificate No." value={formData.master_certificate_number} onChange={(v) => updateField("master_certificate_number", v)} error={errors.master_certificate_number} />
             <FloatingLabelField id="instrument_type" label="Instrument Type" value={formData.instrument_type} onChange={(v) => updateField("instrument_type", v)} error={errors.instrument_type} />
@@ -235,8 +235,8 @@ export default function MasterForm({
             </div>
             <FloatingLabelField id="uncertainty_u" label="Uncertainty (u)" type="number" value={formData.uncertainty_u} onChange={(v) => updateField("uncertainty_u", v)} error={errors.uncertainty_u} />
             <FloatingLabelField id="accuracy" label="Accuracy" type="number" value={formData.accuracy} onChange={(v) => updateField("accuracy", v)} error={errors.accuracy} />
-            <FloatingLabelField id="resolution" label="Resolution" type="number" value={formData.resolution} onChange={(v) => updateField("resolution", v)} error={errors.resolution} />
-            <FloatingLabelField id="cal_due_date" label="Cal Due Date" type="date" value={formData.cal_due_date} onChange={(v) => updateField("cal_due_date", v)} error={errors.cal_due_date} />
+            <FloatingLabelField id="master-resolution" label="Resolution" type="number" value={formData.resolution} onChange={(v) => updateField("resolution", v)} error={errors.resolution} />
+            <FloatingLabelField id="master-cal_due_date" label="Cal Due Date" type="date" value={formData.cal_due_date} onChange={(v) => updateField("cal_due_date", v)} error={errors.cal_due_date} />
             <FloatingLabelField id="claimed_cmc" label="Claimed CMC" type="number" value={formData.claimed_cmc} onChange={(v) => updateField("claimed_cmc", v)} error={errors.claimed_cmc} />
           </div>
 
