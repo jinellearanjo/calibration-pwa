@@ -457,7 +457,7 @@ function newSetpoint(index) {
 
 /** Converts a saved backend record (with nested readings) back into this form's local state shape. */
 function hydrateSetpoint(t) {
-  const sortedReadings = (t.readings || [])
+  const sortedReadings = (t.temperature_repeatability_readings || [])
     .slice()
     .sort((a, b) => a.reading_number - b.reading_number)
     .map(r => ({ reading_value: r.reading_value !== null && r.reading_value !== undefined ? String(r.reading_value) : "" }));
