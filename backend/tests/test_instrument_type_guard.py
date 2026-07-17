@@ -142,6 +142,7 @@ def test_weighing_repeatability_allows_matching_instrument():
     session, instrument = _mock_session_and_instrument("Weighing")
     with patch.object(main.database, "get_session", return_value=session), \
          patch.object(main.database, "get_instrument", return_value=instrument), \
+         patch.object(main.database, "delete_weighing_repeatability_test_by_key"), \
          patch.object(main.database, "insert_weighing_repeatability_test", return_value=[{"id": "t1"}]), \
          patch.object(main.database, "insert_weighing_repeatability_readings", return_value=[]):
         resp = client.post(
@@ -177,6 +178,7 @@ def test_temperature_repeatability_allows_matching_instrument():
     session, instrument = _mock_session_and_instrument("Temperature")
     with patch.object(main.database, "get_session", return_value=session), \
          patch.object(main.database, "get_instrument", return_value=instrument), \
+         patch.object(main.database, "delete_temperature_repeatability_test_by_key"), \
          patch.object(main.database, "insert_temperature_repeatability_test", return_value=[{"id": "t1"}]), \
          patch.object(main.database, "insert_temperature_repeatability_readings", return_value=[]):
         resp = client.post(
@@ -212,6 +214,7 @@ def test_electrical_test_allows_matching_instrument():
     session, instrument = _mock_session_and_instrument("Electrical")
     with patch.object(main.database, "get_session", return_value=session), \
          patch.object(main.database, "get_instrument", return_value=instrument), \
+         patch.object(main.database, "delete_electrical_test_by_key"), \
          patch.object(main.database, "insert_electrical_test", return_value=[{"id": "t1"}]), \
          patch.object(main.database, "insert_electrical_readings", return_value=[]):
         resp = client.post(
