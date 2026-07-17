@@ -310,7 +310,7 @@ function InstrumentForm() {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 24px" }}>
             <Field label="Certificate Number" id="certificate_number" value={refData.certificate_number} onChange={v => updateRef("certificate_number", v)} error={errors.certificate_number} />
             <Field label="Date of Calibration" id="date_of_calibration" type="date" value={refData.date_of_calibration} onChange={v => updateRef("date_of_calibration", v)} error={errors.date_of_calibration} />
-            <Field label="Calibration Due Date" id="cal_due_date" type="date" value={refData.cal_due_date} onChange={v => updateRef("cal_due_date", v)} error={errors.cal_due_date} />
+            <Field label="Calibration Due Date" id="ref-cal_due_date" type="date" value={refData.cal_due_date} onChange={v => updateRef("cal_due_date", v)} error={errors.cal_due_date} />
             <Field label="Item Received Date" id="item_received_date" type="date" value={refData.item_received_date} onChange={v => updateRef("item_received_date", v)} error={errors.item_received_date} />
             <Field label="Date of Issue" id="date_of_issue" type="date" value={refData.date_of_issue} onChange={v => updateRef("date_of_issue", v)} error={errors.date_of_issue} />
             <Field label="Customer Name" id="customer_name" value={refData.customer_name} onChange={v => updateRef("customer_name", v)} error={errors.customer_name} />
@@ -323,7 +323,7 @@ function InstrumentForm() {
         <div style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)", borderRadius: "var(--radius)", padding: "28px 32px", boxShadow: "var(--shadow-sm)", marginBottom: 24 }}>
           <SectionHeading step="02" title="Unit Under Calibration (UUC)" />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 24px" }}>
-            <Field label="Instrument Name" id="name" value={uucData.name} onChange={v => updateUuc("name", v)} error={errors.name} />
+            <Field label="Instrument Name" id="uuc-name" value={uucData.name} onChange={v => updateUuc("name", v)} error={errors.name} />
             <SelectField label="Type" id="type" value={uucData.type} onChange={v => updateUuc("type", v)} error={errors.type} options={["Pressure", "Temperature", "Electrical", "Weighing"]} />
             {uucData.type === "Temperature" && (
               <SelectField
@@ -335,11 +335,11 @@ function InstrumentForm() {
                 options={["TCK", "RTD", "DTI", "DryBlock"]}
               />
             )}
-            <Field label="Make" id="make" value={uucData.make} onChange={v => updateUuc("make", v)} error={errors.make} />
-            <Field label="Model" id="model" value={uucData.model} onChange={v => updateUuc("model", v)} error={errors.model} />
-            <Field label="Serial Number" id="serial_number" value={uucData.serial_number} onChange={v => updateUuc("serial_number", v)} error={errors.serial_number} />
+            <Field label="Make" id="uuc-make" value={uucData.make} onChange={v => updateUuc("make", v)} error={errors.make} />
+            <Field label="Model" id="uuc-model" value={uucData.model} onChange={v => updateUuc("model", v)} error={errors.model} />
+            <Field label="Serial Number" id="uuc-serial_number" value={uucData.serial_number} onChange={v => updateUuc("serial_number", v)} error={errors.serial_number} />
             <Field label="Accuracy Class" id="accuracy_class" type="number" value={uucData.accuracy_class} onChange={v => updateUuc("accuracy_class", v)} error={errors.accuracy_class} />
-            <Field label="Resolution" id="resolution" type="number" value={uucData.resolution} onChange={v => updateUuc("resolution", v)} error={errors.resolution} />
+            <Field label="Resolution" id="uuc-resolution" type="number" value={uucData.resolution} onChange={v => updateUuc("resolution", v)} error={errors.resolution} />
             <SelectField
               label="Unit"
               id="unit"
