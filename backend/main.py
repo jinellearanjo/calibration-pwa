@@ -1,6 +1,8 @@
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from uuid import UUID
+import httpx
 
 from config import settings
 from auth import get_current_user_id
@@ -33,6 +35,36 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(httpx.TransportError)
+async def handle_supabase_transport_error(request, exc: httpx.TransportError):
+    """Recover from a stale/terminated Supabase connection automatically,
+    instead of requiring a manual server restart.
+
+    database.supabase caches one real client (and its one underlying
+    HTTP/2 connection pool) for the entire lifetime of the server process
+    - see _LazySupabaseClient's docstring. If Supabase's end terminates a
+    pooled connection without httpx noticing (idle timeout, load balancer
+    recycling, a laptop sleep/wake, a brief network drop), every request
+    reusing it fails with an httpx.TransportError subclass (most often
+    RemoteProtocolError('ConnectionTerminated')) - previously an
+    unhandled exception type that crashed past FastAPI's normal response
+    handling and, as a side effect, past CORSMiddleware's header
+    injection too - which is why this could look like a CORS error in
+    the browser rather than what it actually was.
+
+    Registering a real exception handler means this now goes through the
+    normal FastAPI response path (so CORS headers ARE attached correctly),
+    and resetting the cached client means the very next request gets a
+    fresh connection pool rather than hitting the same dead connection
+    again - no restart needed.
+    """
+    database.supabase.reset()
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "Temporary connection issue reaching the database. Please try again."},
+    )
 
 
 def _require_instrument_type(session_id: str, expected_type: str) -> None:

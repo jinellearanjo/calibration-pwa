@@ -56,6 +56,25 @@ class _LazySupabaseClient:
     def __getattr__(self, name):
         return getattr(self._ensure_client(), name)
 
+    def reset(self) -> None:
+        """Discard the cached client so the next call rebuilds it from
+        scratch, with a fresh httpx connection pool.
+
+        This client (and its one underlying HTTP/2 connection pool) is
+        cached for the entire lifetime of the server process. If Supabase's
+        end terminates a pooled connection (idle timeout, load balancer
+        recycling, a laptop sleep/wake, a brief network drop) without
+        httpx noticing, the next request to reuse it fails with
+        httpx.RemoteProtocolError('ConnectionTerminated') - a genuinely
+        unhandled exception type, not an HTTPException, which crashes past
+        FastAPI's normal response handling (and, as a side effect, past
+        CORSMiddleware's header injection too - which is why this can look
+        like a CORS error in the browser rather than what it actually is).
+        main.py's exception handler for httpx.TransportError calls this to
+        recover automatically instead of requiring a manual server restart.
+        """
+        self._client = None
+
 
 supabase = _LazySupabaseClient()
 
