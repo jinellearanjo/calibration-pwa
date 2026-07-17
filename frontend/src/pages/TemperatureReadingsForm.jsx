@@ -457,6 +457,14 @@ function newSetpoint(index) {
 
 /** Converts a saved backend record (with nested readings) back into this form's local state shape. */
 function hydrateSetpoint(t) {
+  // get_temperature_repeatability_tests joins via PostgREST's embedded-
+  // resource syntax (select("*, temperature_repeatability_readings(*)")),
+  // which names the nested array after the real table -
+  // temperature_repeatability_readings - not a generic "readings" key.
+  // Reading t.readings here was always undefined, so this silently fell
+  // back to 3 blank rows every time, with no error anywhere: the setpoint
+  // metadata (t.setpoint_label, t.nominal_temperature, etc.) are top-level
+  // fields and hydrated fine, only the readings were ever actually empty.
   const sortedReadings = (t.temperature_repeatability_readings || [])
     .slice()
     .sort((a, b) => a.reading_number - b.reading_number)
