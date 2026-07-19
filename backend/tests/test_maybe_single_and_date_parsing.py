@@ -89,3 +89,42 @@ def test_format_date_still_handles_none():
 
 def test_format_date_still_falls_back_on_genuinely_unparseable_string():
     assert _format_date("not-a-date") == "not-a-date"
+
+
+# ── reporting._resolve_approver ───────────────────────────────────────────
+
+def test_resolve_approver_returns_none_for_a_clean_never_flagged_session():
+    from modules.reporting import _resolve_approver
+    session = {"review_status": "clean", "reviewed_by": None}
+    assert _resolve_approver(session) == (None, None)
+
+
+def test_resolve_approver_returns_none_while_still_pending_review():
+    """Even if reviewed_by somehow got set early, only an actual
+    'approved' status should populate the certificate - a pending or
+    rejected session must not show an Approved By name."""
+    from modules.reporting import _resolve_approver
+    session = {"review_status": "pending_review", "reviewed_by": "reviewer-1"}
+    assert _resolve_approver(session) == (None, None)
+
+
+def test_resolve_approver_returns_none_when_rejected():
+    from modules.reporting import _resolve_approver
+    session = {"review_status": "rejected", "reviewed_by": "reviewer-1"}
+    assert _resolve_approver(session) == (None, None)
+
+
+def test_resolve_approver_returns_name_and_title_when_approved():
+    from modules.reporting import _resolve_approver
+    session = {"review_status": "approved", "reviewed_by": "reviewer-1"}
+    with patch("modules.reporting.get_profile", return_value={"full_name": "S. Charkha", "title": "TM"}):
+        result = _resolve_approver(session)
+    assert result == ("S. Charkha", "TM")
+
+
+def test_resolve_approver_handles_missing_reviewer_profile_gracefully():
+    from modules.reporting import _resolve_approver
+    session = {"review_status": "approved", "reviewed_by": "reviewer-1"}
+    with patch("modules.reporting.get_profile", return_value=None):
+        result = _resolve_approver(session)
+    assert result == (None, None)

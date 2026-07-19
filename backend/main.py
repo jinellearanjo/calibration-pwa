@@ -5,7 +5,7 @@ from uuid import UUID
 import httpx
 
 from config import settings
-from auth import get_current_user_id
+from auth import get_current_user_id, require_tier
 from models import (
     InstrumentCreate,
     CalibrationSessionCreate,
@@ -21,6 +21,11 @@ from models import (
     TemperatureRepeatabilityReadingCreate,
     ElectricalTestCreate,
     ElectricalReadingCreate,
+    ProfileUpdate,
+    RoleChangeRequestCreate,
+    RoleChangeReviewDecision,
+    SessionReviewDecision,
+    REQUESTABLE_TITLES,
 )
 import database
 from modules import validation, reporting, formula_manager
@@ -596,9 +601,14 @@ def delete_session_readings(
 @app.post("/api/master-instruments")
 def create_master_instrument(
     payload: MasterInstrumentCreate,
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_tier("full_edit", "cert_creation")),
 ):
     """Create a new master instrument record.
+
+    Restricted to full_edit and cert_creation tiers (i.e. not Viewer) -
+    master instruments are the calibration standards everything else's
+    uncertainty is measured against, so letting a read-only account add
+    or remove them was a real governance gap, not just a visibility one.
 
     Args:
         payload: Master instrument fields from the request body.
@@ -663,8 +673,11 @@ def get_master_instrument(
 @app.delete("/api/master-instruments/{master_id}")
 def delete_master_instrument(
     master_id: UUID,
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_tier("full_edit", "cert_creation")),
 ):
+    """Delete a master instrument. Restricted to full_edit and
+    cert_creation tiers (not Viewer) - see create_master_instrument's
+    docstring for why."""
     linked = database.supabase.table("calibration_sessions").select("id").eq(
         "master_instrument_id", str(master_id)
     ).execute()
@@ -684,6 +697,218 @@ def delete_master_instrument(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Deletion failed: {e}")
     return {"message": "Master instrument deleted."}
+
+# ── Profiles / Roles ──────────────────────────────────────────────────────────
+
+@app.get("/api/profile")
+def get_my_profile(user_id: str = Depends(get_current_user_id)):
+    """Fetch the current user's own profile (name, title).
+
+    Args:
+        user_id: UUID of the authenticated user from JWT.
+
+    Returns:
+        dict: The profile record. If none exists yet (e.g. an account
+            created before profiles existed), returns a default Viewer
+            shape rather than 404 - a missing profile isn't an error
+            case here, see auth.get_current_user_title's docstring.
+    """
+    profile = database.get_profile(user_id)
+    if profile is None:
+        return {"id": user_id, "full_name": None, "title": "Viewer"}
+    return profile
+
+
+@app.put("/api/profile")
+def update_my_profile(payload: ProfileUpdate, user_id: str = Depends(get_current_user_id)):
+    """Update the current user's own display name.
+
+    Title is deliberately not editable here - see ProfileUpdate's
+    docstring. Title changes only happen via an approved role-change
+    request (see resolve_role_change_request below).
+
+    Args:
+        payload: The new full_name.
+        user_id: UUID of the authenticated user from JWT.
+
+    Returns:
+        dict: The updated profile record.
+    """
+    return database.update_profile(user_id, full_name=payload.full_name)
+
+
+@app.get("/api/profiles")
+def list_all_profiles(user_id: str = Depends(require_tier("full_edit"))):
+    """List every user's profile - the full-edit tier's "see all activity"
+    view. Restricted to full_edit (QM/TM/MR/MD) only.
+
+    Args:
+        user_id: UUID of the authenticated user from JWT.
+
+    Returns:
+        list: All profile records.
+    """
+    return database.list_profiles()
+
+
+# ── Role change requests ────────────────────────────────────────────────────
+
+@app.post("/api/role-requests")
+def create_role_change_request(
+    payload: RoleChangeRequestCreate,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Submit a request to be granted a different job title.
+
+    Any authenticated user may submit one - this is the self-service path
+    for a Viewer to request Cal Tech/Engineer/etc. access (or any title
+    requesting any other; not restricted to "upward" requests only). Only
+    one pending request per user at a time - a denied request can always
+    be resubmitted, this only blocks a second SIMULTANEOUS pending one.
+
+    Args:
+        payload: The requested title and an optional reason.
+        user_id: UUID of the authenticated user from JWT.
+
+    Returns:
+        dict: The created request record.
+
+    Raises:
+        HTTPException: 400 if requested_title isn't a valid title, or if
+            the user already has a pending request.
+    """
+    if payload.requested_title not in REQUESTABLE_TITLES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"'{payload.requested_title}' is not a requestable title. Must be one of: {', '.join(REQUESTABLE_TITLES)}.",
+        )
+    existing = database.get_pending_role_change_request_for_user(user_id)
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail="You already have a pending role-change request. Wait for it to be reviewed before submitting another.",
+        )
+    return database.insert_role_change_request({
+        "user_id": user_id,
+        "requested_title": payload.requested_title,
+        "reason": payload.reason,
+    })
+
+
+@app.get("/api/role-requests")
+def list_role_change_requests(
+    status: str = None,
+    user_id: str = Depends(require_tier("full_edit")),
+):
+    """List role-change requests. Restricted to full_edit tier only.
+
+    Args:
+        status: Optional filter ("pending", "approved", "denied"). If
+            omitted, returns all requests regardless of status.
+        user_id: UUID of the authenticated user from JWT.
+
+    Returns:
+        list: Matching request records.
+    """
+    return database.list_role_change_requests(status)
+
+
+@app.put("/api/role-requests/{request_id}/approve")
+def approve_role_change_request(
+    request_id: UUID,
+    payload: RoleChangeReviewDecision,
+    reviewer_id: str = Depends(require_tier("full_edit")),
+):
+    """Approve a pending role-change request, applying the new title to
+    the requester's profile. Restricted to full_edit tier only.
+
+    Args:
+        request_id: UUID of the role_change_requests row.
+        payload: Optional reviewer note.
+        reviewer_id: UUID of the full-edit-tier user approving this,
+            from JWT.
+
+    Returns:
+        dict: A confirmation message.
+
+    Raises:
+        HTTPException: 404 if the request doesn't exist.
+    """
+    requests = database.list_role_change_requests()
+    match = next((r for r in requests if r["id"] == str(request_id)), None)
+    if match is None:
+        raise HTTPException(status_code=404, detail="Role change request not found.")
+    database.update_role_change_request(str(request_id), "approved", reviewer_id)
+    database.update_profile(match["user_id"], title=match["requested_title"])
+    return {"message": f"Approved. User's title is now {match['requested_title']}."}
+
+
+@app.put("/api/role-requests/{request_id}/deny")
+def deny_role_change_request(
+    request_id: UUID,
+    payload: RoleChangeReviewDecision,
+    reviewer_id: str = Depends(require_tier("full_edit")),
+):
+    """Deny a pending role-change request. The requester's profile is
+    unaffected, and they may submit a new request afterward (denial isn't
+    permanent). Restricted to full_edit tier only.
+
+    Args:
+        request_id: UUID of the role_change_requests row.
+        payload: Optional reviewer note explaining the denial.
+        reviewer_id: UUID of the full-edit-tier user denying this, from JWT.
+
+    Returns:
+        dict: A confirmation message.
+    """
+    database.update_role_change_request(str(request_id), "denied", reviewer_id)
+    return {"message": "Request denied."}
+
+
+# ── Session review workflow ──────────────────────────────────────────────────
+
+@app.put("/api/sessions/{session_id}/review/approve")
+def approve_session_review(
+    session_id: UUID,
+    payload: SessionReviewDecision,
+    reviewer_id: str = Depends(require_tier("full_edit")),
+):
+    """Approve a session that was flagged by check_master_instrument_validity,
+    unblocking certificate generation. Restricted to full_edit tier only.
+
+    Args:
+        session_id: UUID of the calibration session.
+        payload: Optional replacement review note.
+        reviewer_id: UUID of the full-edit-tier user approving, from JWT.
+
+    Returns:
+        dict: A confirmation message.
+    """
+    database.resolve_session_review(str(session_id), approved=True, reviewed_by=reviewer_id, review_note=payload.review_note)
+    return {"message": "Session approved. Certificate generation is unblocked."}
+
+
+@app.put("/api/sessions/{session_id}/review/reject")
+def reject_session_review(
+    session_id: UUID,
+    payload: SessionReviewDecision,
+    reviewer_id: str = Depends(require_tier("full_edit")),
+):
+    """Reject a flagged session. Certificate generation stays blocked;
+    review_note (if provided) tells the original technician what to fix.
+    Restricted to full_edit tier only.
+
+    Args:
+        session_id: UUID of the calibration session.
+        payload: Optional rejection reason.
+        reviewer_id: UUID of the full-edit-tier user rejecting, from JWT.
+
+    Returns:
+        dict: A confirmation message.
+    """
+    database.resolve_session_review(str(session_id), approved=False, reviewed_by=reviewer_id, review_note=payload.review_note)
+    return {"message": "Session rejected."}
+
 
 # ── Uncertainty Budgets ───────────────────────────────────────────────────────
 
@@ -1189,6 +1414,17 @@ def generate_report(
 ):
     """Generate and download a calibration certificate.
 
+    Exception-based review gate: the master instrument used for this
+    session is checked for validity (see
+    validation.check_master_instrument_validity) the first time a report
+    is requested for a session that hasn't been checked yet. A clean
+    result generates the certificate immediately, exactly as before this
+    workflow existed - most sessions never touch review_status beyond its
+    "clean" default. A failing check flags the session (review_status
+    becomes "pending_review") and blocks generation until a full_edit-tier
+    user approves or rejects it via /api/sessions/{id}/review/approve or
+    /reject - see main.py's Session review workflow section.
+
     Args:
         session_id: UUID of the calibration session.
         format: Report format, either pdf or excel.
@@ -1199,8 +1435,39 @@ def generate_report(
 
     Raises:
         HTTPException: 400 if the session is rejected or format is invalid.
+        HTTPException: 403 if the session is flagged and awaiting
+            full-edit-tier review, or was reviewed and rejected.
         HTTPException: 404 if required data is missing.
     """
+    session_record = database.get_session(str(session_id))
+    if session_record is None:
+        raise HTTPException(status_code=404, detail="Session not found.")
+
+    review_status = session_record.get("review_status", "clean")
+
+    if review_status == "clean":
+        issues = validation.check_master_instrument_validity(str(session_id))
+        if issues:
+            database.flag_session_for_review(str(session_id), review_note=" ".join(issues))
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "This session has been flagged for review before a certificate can be "
+                    f"generated: {' '.join(issues)} A QM/TM/MR/MD needs to approve it first."
+                ),
+            )
+    elif review_status == "pending_review":
+        raise HTTPException(
+            status_code=403,
+            detail=f"This session is awaiting review before a certificate can be generated: {session_record.get('review_note', '')}",
+        )
+    elif review_status == "rejected":
+        raise HTTPException(
+            status_code=403,
+            detail=f"This session's certificate generation was rejected on review: {session_record.get('review_note', '')}",
+        )
+    # review_status == "approved" falls through and generates normally.
+
     try:
         if format == "pdf":
             return reporting.generate_pdf_report(str(session_id))

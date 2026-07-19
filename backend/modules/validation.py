@@ -16,6 +16,8 @@ Rules enforced throughout
 * No raw database queries.
 """
 
+from datetime import date
+
 from database import (
     get_uncertainty_budgets,
     get_readings,
@@ -28,7 +30,78 @@ from database import (
     get_weighing_hysteresis_readings,
     get_temperature_repeatability_tests,
     get_electrical_tests,
+    get_master_instrument,
 )
+
+
+def check_master_instrument_validity(session_id: str) -> list[str]:
+    """Check whether the master instrument used for a session is actually
+    valid to use as a calibration standard.
+
+    This is a SEPARATE concern from validate_session's ACCEPTED/REVIEW
+    REQUIRED/REJECTED compliance status above - that's about whether the
+    calibration RESULT passes acceptance limits; this is about whether
+    the master instrument itself can be trusted as a reference standard
+    in the first place. A session can have a perfectly ACCEPTED result
+    calculated against an invalid master - these checks catch that.
+
+    Feeds calibration_sessions.review_status (see the 2026-07-19
+    migration): any issue returned here should cause the calling code to
+    flag the session for full-edit-tier (QM/TM/MR/MD) review before a
+    certificate can be generated, via database.flag_session_for_review.
+
+    Checks performed:
+    - The session has a master_instrument_id set at all.
+    - The master instrument's own cal_due_date hasn't passed.
+    - uncertainty_u, accuracy, resolution, and claimed_cmc aren't None
+      (i.e. not still a TBA placeholder).
+
+    Args:
+        session_id: UUID of the calibration session to check.
+
+    Returns:
+        list[str]: Human-readable issue descriptions, one per problem
+            found. Empty list means the master instrument is valid - no
+            review needed, certificate generation proceeds as normal.
+    """
+    issues: list[str] = []
+
+    session_record = get_session(session_id)
+    if session_record is None:
+        return [f"No session found for session_id={session_id}."]
+
+    master_instrument_id = session_record.get("master_instrument_id")
+    if not master_instrument_id:
+        issues.append("No master instrument has been selected for this session.")
+        return issues
+
+    master = get_master_instrument(master_instrument_id)
+    if master is None:
+        issues.append("The selected master instrument record could not be found.")
+        return issues
+
+    master_name = master.get("name", "unknown master instrument")
+
+    cal_due_date = master.get("cal_due_date")
+    if cal_due_date is not None:
+        due_date = cal_due_date if isinstance(cal_due_date, date) else date.fromisoformat(str(cal_due_date))
+        if due_date < date.today():
+            issues.append(
+                f"Master instrument '{master_name}' calibration expired {due_date.isoformat()}."
+            )
+    else:
+        issues.append(f"Master instrument '{master_name}' has no calibration due date on record.")
+
+    for field, label in [
+        ("uncertainty_u", "uncertainty"),
+        ("accuracy", "accuracy"),
+        ("resolution", "resolution"),
+        ("claimed_cmc", "claimed CMC"),
+    ]:
+        if master.get(field) is None:
+            issues.append(f"Master instrument '{master_name}' has no {label} value on record (still TBA).")
+
+    return issues
 
 
 def validate_session(session_id: str) -> dict:

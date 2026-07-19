@@ -52,6 +52,9 @@ def test_list_master_instruments_returns_all_users_masters_not_just_own():
 def test_create_master_instrument_still_records_creator_for_audit():
     # user_id must still be stamped on creation (audit trail), even
     # though it no longer gates visibility for GET.
+    # This endpoint is now gated to full_edit/cert_creation tiers (not
+    # Viewer) - mock a profile with an edit-tier title so the request
+    # gets past require_tier.
     payload = {
         "name": "Dead Weight Tester", "instrument_type": "Pressure",
         "make": "Budenberg", "model": "DHB540 DX", "serial_number": "SN1",
@@ -59,7 +62,8 @@ def test_create_master_instrument_still_records_creator_for_audit():
         "uncertainty_u": 0.01, "accuracy": 0.02, "resolution": 0.001,
         "claimed_cmc": 0.05, "cal_due_date": "2027-01-01",
     }
-    with patch.object(main.database, "supabase") as mock_supabase:
+    with patch.object(main.database, "supabase") as mock_supabase, \
+         patch.object(main.database, "get_profile", return_value={"id": "user-a", "title": "Cal Tech"}):
         mock_supabase.table.return_value.insert.return_value.execute.return_value = \
             MagicMock(data=[{"id": "m1", **payload, "user_id": "user-a"}])
         resp = client.post("/api/master-instruments", json=payload)
@@ -75,3 +79,25 @@ def test_create_master_instrument_still_records_creator_for_audit():
     # literal here only ever worked by alphabetical luck.
     expected_user_id = app.dependency_overrides[auth.get_current_user_id]()
     assert inserted_data["user_id"] == expected_user_id
+
+
+def test_create_master_instrument_rejects_viewer():
+    """The actual governance fix this phase added: a Viewer must not be
+    able to add master instruments, end-to-end through the real
+    endpoint - not just checked in isolation against require_tier."""
+    payload = {
+        "name": "Dead Weight Tester", "instrument_type": "Pressure",
+        "make": "Budenberg", "model": "DHB540 DX", "serial_number": "SN1",
+        "asset_number": "A1", "traceability_chain": "DCL",
+        "uncertainty_u": 0.01, "accuracy": 0.02, "resolution": 0.001,
+        "claimed_cmc": 0.05, "cal_due_date": "2027-01-01",
+    }
+    with patch.object(main.database, "get_profile", return_value={"id": "user-a", "title": "Viewer"}):
+        resp = client.post("/api/master-instruments", json=payload)
+    assert resp.status_code == 403
+
+
+def test_delete_master_instrument_rejects_viewer():
+    with patch.object(main.database, "get_profile", return_value={"id": "user-a", "title": "Viewer"}):
+        resp = client.delete("/api/master-instruments/m1")
+    assert resp.status_code == 403

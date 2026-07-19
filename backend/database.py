@@ -839,3 +839,220 @@ def get_electrical_tests(session_id: str) -> list:
         .execute()
     )
     return response.data
+
+
+# ── Profiles (roles) ─────────────────────────────────────────────────────────
+
+def get_profile(user_id: str) -> dict:
+    """Fetch a user's profile (full_name, title).
+
+    Uses maybe_single() rather than single() - a missing profile (e.g. an
+    account created before the 2026-07-19 migration's handle_new_user
+    trigger existed) is an expected, non-exceptional case, not a crash;
+    callers (see auth.get_current_user_title) default to "Viewer" when
+    this returns None.
+
+    Args:
+        user_id: The UUID of the user.
+
+    Returns:
+        dict: The profile record, or None if no profile row exists yet.
+
+    Raises:
+        Exception: If the database query fails for a reason other than
+            "no matching row".
+    """
+    response = supabase.table("profiles").select("*").eq("id", user_id).maybe_single().execute()
+    return response.data
+
+
+def list_profiles() -> list:
+    """Fetch every user's profile - used for the full-edit-tier "see all
+    activity" view and for resolving names/titles for display (e.g. who
+    submitted a pending role-change request).
+
+    Returns:
+        list: All profile records.
+
+    Raises:
+        Exception: If the database query fails.
+    """
+    response = supabase.table("profiles").select("*").execute()
+    return response.data
+
+
+def update_profile(user_id: str, full_name: str = None, title: str = None) -> dict:
+    """Update a user's profile.
+
+    Only the fields actually provided are updated. Role/title changes
+    should normally go through the role_change_request approval flow
+    (see update_role_change_request below) rather than calling this
+    directly with a new title - this function itself doesn't enforce
+    that; main.py's endpoints are what decide when a direct title change
+    is allowed (e.g. approving a request) versus not.
+
+    Args:
+        user_id: The UUID of the user whose profile to update.
+        full_name: New display name, if changing.
+        title: New job title, if changing.
+
+    Returns:
+        dict: The updated profile record.
+
+    Raises:
+        Exception: If the database query fails.
+    """
+    updates = {}
+    if full_name is not None:
+        updates["full_name"] = full_name
+    if title is not None:
+        updates["title"] = title
+    response = supabase.table("profiles").update(updates).eq("id", user_id).execute()
+    return response.data
+
+
+# ── Role change requests ────────────────────────────────────────────────────
+
+def insert_role_change_request(request: dict) -> dict:
+    """Insert a new role-change request (pending status).
+
+    Args:
+        request: A dictionary matching role_change_requests columns
+            (user_id, requested_title, reason).
+
+    Returns:
+        dict: The inserted request record.
+
+    Raises:
+        Exception: If the database query fails.
+    """
+    response = supabase.table("role_change_requests").insert(request).execute()
+    return response.data
+
+
+def get_pending_role_change_request_for_user(user_id: str) -> dict:
+    """Check whether a user already has a pending (unreviewed) request.
+
+    Used to enforce "only one pending request at a time" in application
+    code (main.py), rather than a DB constraint - a denied request can
+    always be resubmitted, so this only ever blocks a SECOND simultaneous
+    pending request, not a new one after a prior denial.
+
+    Args:
+        user_id: The UUID of the user.
+
+    Returns:
+        dict: The pending request record, or None if none exists.
+
+    Raises:
+        Exception: If the database query fails.
+    """
+    response = (
+        supabase.table("role_change_requests")
+        .select("*")
+        .eq("user_id", user_id)
+        .eq("status", "pending")
+        .maybe_single()
+        .execute()
+    )
+    return response.data
+
+
+def list_role_change_requests(status: str = None) -> list:
+    """Fetch role-change requests, optionally filtered by status.
+
+    Args:
+        status: If given, only return requests in this status
+            ("pending", "approved", "denied"). If None, return all.
+
+    Returns:
+        list: Matching request records.
+
+    Raises:
+        Exception: If the database query fails.
+    """
+    query = supabase.table("role_change_requests").select("*")
+    if status is not None:
+        query = query.eq("status", status)
+    response = query.execute()
+    return response.data
+
+
+def update_role_change_request(request_id: str, status: str, reviewed_by: str) -> dict:
+    """Mark a role-change request as approved or denied.
+
+    Does NOT itself update the requester's profile.title - main.py's
+    endpoint calls update_profile separately on approval, keeping "record
+    the decision" and "apply the decision" as two explicit steps rather
+    than one function silently doing both.
+
+    Args:
+        request_id: The UUID of the request.
+        status: "approved" or "denied".
+        reviewed_by: The UUID of the full-edit-tier user making the decision.
+
+    Returns:
+        dict: The updated request record.
+
+    Raises:
+        Exception: If the database query fails.
+    """
+    response = (
+        supabase.table("role_change_requests")
+        .update({"status": status, "reviewed_by": reviewed_by, "reviewed_at": "now()"})
+        .eq("id", request_id)
+        .execute()
+    )
+    return response.data
+
+
+# ── Session review workflow ──────────────────────────────────────────────────
+
+def flag_session_for_review(session_id: str, review_note: str) -> None:
+    """Mark a session as needing full-edit-tier review before its
+    certificate can be generated.
+
+    Called when a master-instrument validity check fails at calculation/
+    report time (see validation.check_master_instrument_validity). Most
+    sessions never call this - review_status defaults to "clean" and
+    certificate generation proceeds immediately, exactly as before this
+    workflow existed.
+
+    Args:
+        session_id: The UUID of the calibration session.
+        review_note: Why this session was flagged (e.g. "Master instrument
+            'Budenberg DWT-2' calibration expired 2026-05-01"), shown to
+            both the reviewer and the original technician.
+
+    Raises:
+        Exception: If the database query fails.
+    """
+    supabase.table("calibration_sessions").update({
+        "review_status": "pending_review",
+        "review_note": review_note,
+    }).eq("id", session_id).execute()
+
+
+def resolve_session_review(session_id: str, approved: bool, reviewed_by: str, review_note: str = None) -> None:
+    """Approve or reject a flagged session, recorded by a full-edit-tier user.
+
+    Args:
+        session_id: The UUID of the calibration session.
+        approved: True to approve (certificate generation unblocks), False
+            to reject.
+        reviewed_by: The UUID of the full-edit-tier user making the decision.
+        review_note: Optional replacement/updated note - e.g. a rejection
+            reason beyond the original flag. If None, the existing
+            review_note (the original flag reason) is left as-is.
+
+    Raises:
+        Exception: If the database query fails.
+    """
+    updates = {
+        "review_status": "approved" if approved else "rejected",
+        "reviewed_by": reviewed_by,
+        "reviewed_at": "now()",
+    }
+    if review_note is not None:
+        updates["review_note"] = review_note
+    supabase.table("calibration_sessions").update(updates).eq("id", session_id).execute()

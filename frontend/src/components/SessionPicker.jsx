@@ -69,31 +69,39 @@ function SessionPicker({ selectedSessionId, onSelect, categoryFilter }) {
         Choose an existing session to continue working on. The form below stays disabled until you select one.
       </p>
 
-      {loading && <p style={{ fontSize: 13, color: "var(--color-muted)" }}>Loading sessions...</p>}
-      {error && <p style={{ fontSize: 13, color: "var(--color-error)" }}>{error}</p>}
+      {/* Always rendered, never conditionally omitted - the label above
+          points to this id via htmlFor, and Chrome flags that as a real
+          mismatch (not just a lint nit) for as long as this element isn't
+          in the DOM yet. Previously this only rendered once !loading &&
+          !error, so the label pointed at a nonexistent id during every
+          page's initial loading moment, and permanently whenever the
+          session list failed to load - exactly the "label for doesn't
+          match any id" warning flagged (but not pinned down) in an
+          earlier round, since it only shows up by catching a live
+          loading/error state, not from reading the JSX structure alone. */}
+      <select
+        id="session-picker"
+        value={selectedSessionId || ""}
+        onChange={e => onSelect(e.target.value || null)}
+        disabled={loading || !!error}
+        style={{
+          width: "100%",
+          padding: "10px 12px",
+          border: "1px solid var(--color-border)",
+          borderRadius: "var(--radius)",
+          fontSize: 14,
+          background: "white",
+        }}
+      >
+        <option value="">{loading ? "Loading sessions..." : "— Select a session —"}</option>
+        {!loading && !error && visibleSessions.map(s => (
+          <option key={s.id} value={s.id}>
+            {(s.instruments && s.instruments.name) || s.instrument_id} — {s.date} — {s.technician}
+          </option>
+        ))}
+      </select>
 
-      {!loading && !error && (
-        <select
-          id="session-picker"
-          value={selectedSessionId || ""}
-          onChange={e => onSelect(e.target.value || null)}
-          style={{
-            width: "100%",
-            padding: "10px 12px",
-            border: "1px solid var(--color-border)",
-            borderRadius: "var(--radius)",
-            fontSize: 14,
-            background: "white",
-          }}
-        >
-          <option value="">— Select a session —</option>
-          {visibleSessions.map(s => (
-            <option key={s.id} value={s.id}>
-              {(s.instruments && s.instruments.name) || s.instrument_id} — {s.date} — {s.technician}
-            </option>
-          ))}
-        </select>
-      )}
+      {error && <p style={{ fontSize: 13, color: "var(--color-error)", marginTop: 8 }}>{error}</p>}
 
       {!loading && !error && visibleSessions.length === 0 && (
         <p style={{ fontSize: 13, color: "var(--color-muted)", marginTop: 8 }}>

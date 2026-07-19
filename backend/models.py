@@ -450,3 +450,59 @@ class ElectricalReadingCreate(BaseModel):
     test_id: Optional[UUID] = None
     reading_number: int
     reading_value: float
+
+
+# ── Roles / review workflow ───────────────────────────────────────────────
+
+VALID_TITLES = ("QM", "TM", "MR", "MD", "Cal Tech", "Engineer", "Admin", "Lab Staff", "Viewer")
+# Titles a user may request via the role-change request flow. Deliberately
+# excludes nothing today (any title can be requested) - if MD/MR should
+# ever be excluded from self-service requests, restrict this tuple, not
+# VALID_TITLES above (which profiles.title itself still allows).
+REQUESTABLE_TITLES = ("QM", "TM", "MR", "MD", "Cal Tech", "Engineer", "Admin", "Lab Staff")
+
+
+class ProfileUpdate(BaseModel):
+    """Pydantic model for updating a user's own profile.
+
+    Attributes:
+        full_name: New display name. Title is deliberately NOT editable
+            here - title changes only happen via an approved
+            RoleChangeRequestCreate, handled by a full-edit-tier user.
+    """
+    full_name: str
+
+
+class RoleChangeRequestCreate(BaseModel):
+    """Pydantic model for a user requesting a different job title.
+
+    Attributes:
+        requested_title: The title being requested (must be one of
+            REQUESTABLE_TITLES).
+        reason: Optional free-text explanation shown to the reviewer.
+    """
+    requested_title: str
+    reason: Optional[str] = None
+
+
+class RoleChangeReviewDecision(BaseModel):
+    """Pydantic model for a full-edit-tier user approving or denying a
+    pending role-change request.
+
+    Attributes:
+        reason: Optional note explaining the decision, most useful on a
+            denial so the requester knows why.
+    """
+    reason: Optional[str] = None
+
+
+class SessionReviewDecision(BaseModel):
+    """Pydantic model for a full-edit-tier user approving or rejecting a
+    session flagged by check_master_instrument_validity.
+
+    Attributes:
+        review_note: Optional replacement note - e.g. a rejection reason
+            beyond the original flag. If omitted, the original flag
+            reason (set when the session was first flagged) is kept as-is.
+    """
+    review_note: Optional[str] = None

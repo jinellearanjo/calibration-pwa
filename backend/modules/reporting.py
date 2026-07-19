@@ -16,8 +16,10 @@ Rules enforced throughout
 * Font is Helvetica (ReportLab built-in); no external font files required.
 * All tables have black borders.
 * Page numbers appear in the footer of every PDF page.
-* If assets/logo.png exists it is drawn in the PDF header; if absent it is
-  silently skipped — no exception is raised.
+* If assets/logo.png exists it is drawn top-left in the PDF header; if
+  absent it is silently skipped — no exception is raised. Same pattern for
+  assets/iso_logo.png (the ISO 9001/17025 accreditation mark), drawn
+  top-right.
 * Report files are never stored on the server: file is generated, streamed,
   then deleted via a background task attached to the FileResponse.
 * Sessions with status REJECTED raise ValueError before any file is created.
@@ -68,6 +70,7 @@ from database import (
     get_temperature_repeatability_tests,  # temperature_repeatability_tests + nested readings
     get_electrical_tests,        # electrical_tests + nested readings
     insert_audit_log,           # audit_log table
+    get_profile,                 # profiles table - resolves reviewed_by to a name/title
 )
 
 logger = logging.getLogger(__name__)
@@ -76,6 +79,13 @@ logger = logging.getLogger(__name__)
 
 PAGE_WIDTH, PAGE_HEIGHT = A4
 LOGO_PATH = Path("assets/logo.png")
+# Combined ISO 9001 + ISO 17025 accreditation mark, drawn top-right of the
+# certificate header (IW's own logo stays top-left, drawn via LOGO_PATH
+# above). Same defensive "if it exists, draw it; if not, skip silently"
+# pattern - drop a file at this path to activate it, nothing else to wire
+# up. No such file exists in this repo as of this change; obtain the real
+# accreditation mark image from Instruworks/the QM before relying on this.
+ISO_LOGO_PATH = Path("assets/iso_logo.png")
 
 LEFT_MARGIN = 20 * mm
 RIGHT_MARGIN = 20 * mm
@@ -190,6 +200,15 @@ class ReportData:
 
     # calibration_sessions
     technician: str | None
+    # Resolved from calibration_sessions.reviewed_by via profiles, only
+    # populated for sessions that actually went through the review
+    # workflow (review_status == "approved") - see the 2026-07-19
+    # migration and validation.check_master_instrument_validity. Most
+    # sessions are never flagged, so this stays None for them and the
+    # certificate's "Approved By" line renders blank for manual signature,
+    # same as before this workflow existed.
+    approved_by_name: str | None
+    approved_by_title: str | None
 
     # instruments
     instrument_name: str | None
@@ -271,6 +290,37 @@ class ReportData:
     expanded_uncertainty: Any = None
     k_value: Any = None
     final_applied_uncertainty: Any = None
+
+
+def _resolve_approver(session_record: dict) -> tuple[str | None, str | None]:
+    """Resolve the certificate's "Approved By" name/title from a session
+    record, if applicable.
+
+    Only populated when the session actually went through the review
+    workflow (see the 2026-07-19 migration and
+    validation.check_master_instrument_validity) and was approved - the
+    vast majority of sessions are never flagged at all, so this returns
+    (None, None) for them, and the certificate's Approved By line renders
+    blank for a manual signature, same as before this workflow existed.
+
+    Extracted as its own function (rather than inlined in
+    gather_report_data) so it's independently testable without needing
+    to mock the entire report-data-gathering pipeline.
+
+    Args:
+        session_record: The calibration_sessions row (as returned by
+            database.get_session), containing review_status and
+            reviewed_by.
+
+    Returns:
+        tuple[str | None, str | None]: (approved_by_name, approved_by_title),
+            both None if the session wasn't approved through the review
+            workflow.
+    """
+    if session_record.get("review_status") != "approved" or not session_record.get("reviewed_by"):
+        return None, None
+    reviewer_profile = get_profile(session_record["reviewed_by"]) or {}
+    return reviewer_profile.get("full_name"), reviewer_profile.get("title")
 
 
 def gather_report_data(session_id: str) -> ReportData:
@@ -372,6 +422,8 @@ def gather_report_data(session_id: str) -> ReportData:
             session_id,
         )
 
+    approved_by_name, approved_by_title = _resolve_approver(session_record)
+
     return ReportData(
         session_id=session_id,
         session_status=session_status,
@@ -385,6 +437,8 @@ def gather_report_data(session_id: str) -> ReportData:
         customer_address=certificate_record.get("customer_address"),
 
         technician=session_record.get("technician"),
+        approved_by_name=approved_by_name,
+        approved_by_title=approved_by_title,
 
         instrument_name=instrument_record.get("name"),
         instrument_type=instrument_type,
@@ -895,6 +949,26 @@ def _build_header_footer_callback(
                     exc_info=True,
                 )
 
+        if ISO_LOGO_PATH.exists():
+            try:
+                iso_logo_width = 28 * mm
+                canvas_obj.drawImage(
+                    str(ISO_LOGO_PATH),
+                    PAGE_WIDTH - RIGHT_MARGIN - iso_logo_width,
+                    header_baseline - 12 * mm,
+                    width=iso_logo_width,
+                    height=12 * mm,
+                    preserveAspectRatio=True,
+                    mask="auto",
+                )
+            except Exception:
+                # Same defensive handling as the IW logo above.
+                logger.warning(
+                    "ISO logo exists at %s but could not be drawn; skipping.",
+                    ISO_LOGO_PATH,
+                    exc_info=True,
+                )
+
         canvas_obj.setFont(FONT_BOLD, 14)
         canvas_obj.setFillColor(BLACK)
         canvas_obj.drawCentredString(
@@ -1195,13 +1269,32 @@ def _build_pdf_story(
     story.append(HRFlowable(width="100%", thickness=0.5, color=BLACK))
     story.append(Spacer(1, 3 * mm))
 
+    # "Tested/Calibrated By" is always the technician who ran the session
+    # (calibration_sessions.technician - present for every session, no
+    # review workflow needed). "Approved By" is only populated for
+    # sessions that were actually flagged and then approved through the
+    # review workflow (approved_by_name/title, resolved in
+    # gather_report_data) - for the common case of a clean session that
+    # was never flagged, this renders as a blank line for a manual
+    # signature, same as the certificate's prior generic behavior.
+    tested_by_line = _safe_str(report_data.technician)
+    approved_by_line = (
+        f"{_safe_str(report_data.approved_by_name)}, {_safe_str(report_data.approved_by_title)}"
+        if report_data.approved_by_name
+        else ""
+    )
+
     sig_data = [
         [
-            Paragraph("Authorised Signatory", styles["body_bold"]),
+            Paragraph("Tested/Calibrated By", styles["body_bold"]),
             Paragraph("", styles["body"]),
-            Paragraph("Date", styles["body_bold"]),
+            Paragraph("Approved By", styles["body_bold"]),
         ],
-        ["", "", ""],
+        [
+            Paragraph(tested_by_line, styles["body"]),
+            "",
+            Paragraph(approved_by_line, styles["body"]),
+        ],
     ]
     sig_table = Table(sig_data, colWidths=[80 * mm, 20 * mm, usable_width - 100 * mm])
     sig_table.setStyle(
