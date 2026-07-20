@@ -106,7 +106,7 @@ function Account() {
   };
 
   if (loading) {
-    return <div style={{ padding: 32 }}>Loading account...</div>;
+    return <AccountSkeleton />;
   }
 
   const requestTitleOptions = requestGroup ? REQUESTABLE_TITLE_GROUPS[requestGroup] : [];
@@ -211,6 +211,52 @@ const dangerButtonStyle = {
   ...buttonStyle,
   background: "var(--color-error)",
 };
+
+function AccountSkeleton() {
+  const shimmer = {
+    background: "linear-gradient(90deg, var(--color-border) 25%, var(--color-bg) 50%, var(--color-border) 75%)",
+    backgroundSize: "200% 100%",
+    animation: "account-shimmer 1.4s ease-in-out infinite",
+    borderRadius: 6,
+  };
+  return (
+    <div style={{ maxWidth: 640, margin: "0 auto", padding: "32px 24px" }}>
+      <div style={{ ...shimmer, width: 140, height: 26, marginBottom: 10 }} />
+      <div style={{ ...shimmer, width: 260, height: 14, marginBottom: 32 }} />
+
+      <section style={{ marginBottom: 40 }}>
+        <div style={{ ...shimmer, width: 90, height: 17, marginBottom: 20 }} />
+        {[0, 1, 2, 3].map(i => (
+          <div key={i} style={{ marginBottom: 16 }}>
+            <div style={{ ...shimmer, width: 120, height: 12, marginBottom: 8 }} />
+            <div style={{ ...shimmer, width: "100%", height: 36 }} />
+          </div>
+        ))}
+        <div style={{ ...shimmer, width: 130, height: 36, marginTop: 4 }} />
+      </section>
+
+      <section style={{ marginBottom: 40, borderTop: "1px solid var(--color-border)", paddingTop: 24 }}>
+        <div style={{ ...shimmer, width: 240, height: 17, marginBottom: 8 }} />
+        <div style={{ ...shimmer, width: 320, height: 13, marginBottom: 20 }} />
+        <div style={{ ...shimmer, width: "100%", height: 36, marginBottom: 16 }} />
+      </section>
+
+      <section style={{ borderTop: "1px solid var(--color-border)", paddingTop: 24 }}>
+        <div style={{ ...shimmer, width: 130, height: 17, marginBottom: 8 }} />
+        <div style={{ ...shimmer, width: "100%", height: 13, marginBottom: 6 }} />
+        <div style={{ ...shimmer, width: "80%", height: 13, marginBottom: 16 }} />
+        <div style={{ ...shimmer, width: 130, height: 36 }} />
+      </section>
+
+      <style>{`
+        @keyframes account-shimmer {
+          0% { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
+        }
+      `}</style>
+    </div>
+  );
+}
 
 function Field({ label, id, value, onChange }) {
   return (
