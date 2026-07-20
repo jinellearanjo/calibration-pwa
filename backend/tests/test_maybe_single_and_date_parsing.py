@@ -52,11 +52,47 @@ def test_get_calibration_reference_returns_none_instead_of_raising():
     assert result is None
 
 
+def test_get_calibration_reference_handles_maybe_single_returning_none_directly():
+    """Real bug, confirmed in production (Adi's traceback): postgrest-py's
+    maybe_single().execute() returns None directly - the whole response,
+    not just response.data=None - whenever zero rows match. A caller
+    that does response.data unconditionally crashes with
+    AttributeError: 'NoneType' object has no attribute 'data'."""
+    with patch.object(database, "supabase") as mock_supabase:
+        mock_supabase.table.return_value.select.return_value.eq.return_value \
+            .maybe_single.return_value.execute.return_value = None
+        result = database.get_calibration_reference(SESSION_ID)
+    assert result is None
+
+
 def test_get_acceptance_limit_returns_none_instead_of_raising():
     with patch.object(database, "supabase") as mock_supabase:
         mock_supabase.table.return_value.select.return_value.eq.return_value \
             .eq.return_value.maybe_single.return_value.execute.return_value = MagicMock(data=None)
         result = database.get_acceptance_limit("Weighing", "accuracy")
+    assert result is None
+
+
+def test_get_profile_handles_maybe_single_returning_none_directly():
+    """Same real bug as above, in get_profile - hit on EVERY authenticated
+    request via auth.get_current_user_id, since most accounts predating
+    the profiles table have no row yet."""
+    with patch.object(database, "supabase") as mock_supabase:
+        mock_supabase.table.return_value.select.return_value.eq.return_value \
+            .maybe_single.return_value.execute.return_value = None
+        result = database.get_profile("some-user-id")
+    assert result is None
+
+
+def test_get_pending_role_change_request_handles_maybe_single_returning_none_directly():
+    """The exact function and exact crash reported in production:
+    AttributeError: 'NoneType' object has no attribute 'data', thrown
+    from POST /api/role-requests for any user with no existing pending
+    request - i.e. the normal, common case."""
+    with patch.object(database, "supabase") as mock_supabase:
+        mock_supabase.table.return_value.select.return_value.eq.return_value \
+            .eq.return_value.maybe_single.return_value.execute.return_value = None
+        result = database.get_pending_role_change_request_for_user("some-user-id")
     assert result is None
 
 

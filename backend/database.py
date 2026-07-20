@@ -245,7 +245,13 @@ def get_calibration_reference(session_id: str) -> dict:
             "no matching row".
     """
     response = supabase.table("calibration_reference").select("*").eq("session_id", session_id).maybe_single().execute()
-    return response.data
+    # maybe_single().execute() returns None directly (the whole response,
+    # not just .data) when zero rows match - confirmed against postgrest-py
+    # 2.31.0's actual SyncMaybeSingleRequestBuilder.execute() source, and
+    # confirmed the hard way via a real crash in production
+    # (AttributeError: 'NoneType' object has no attribute 'data').
+    # response.data alone is NOT enough here.
+    return response.data if response else None
 
 
 def get_acceptance_limit(instrument_type: str, parameter: str) -> dict:
@@ -269,7 +275,9 @@ def get_acceptance_limit(instrument_type: str, parameter: str) -> dict:
             "no matching row".
     """
     response = supabase.table("acceptance_limits").select("*").eq("instrument_type", instrument_type).eq("parameter", parameter).maybe_single().execute()
-    return response.data
+    # See get_calibration_reference's comment above - maybe_single() can
+    # return None directly, not just response.data=None.
+    return response.data if response else None
 
 
 def insert_uncertainty_budget(budget: dict) -> dict:
@@ -886,7 +894,11 @@ def get_profile(user_id: str) -> dict:
             "no matching row".
     """
     response = supabase.table("profiles").select("*").eq("id", user_id).maybe_single().execute()
-    return response.data
+    # See get_calibration_reference's comment above - maybe_single() can
+    # return None directly, not just response.data=None. This one is
+    # hit on EVERY authenticated request (via auth.get_current_user_id),
+    # so getting it wrong here is especially high-impact.
+    return response.data if response else None
 
 
 def list_profiles() -> list:
@@ -1000,7 +1012,13 @@ def get_pending_role_change_request_for_user(user_id: str) -> dict:
         .maybe_single()
         .execute()
     )
-    return response.data
+    # This exact line was the crash reported in production:
+    # AttributeError: 'NoneType' object has no attribute 'data'.
+    # maybe_single().execute() returns None directly (confirmed against
+    # postgrest-py 2.31.0's actual source) whenever zero rows match -
+    # which is the NORMAL case here (most users have no pending request).
+    # response.data alone is not enough; response itself can be None.
+    return response.data if response else None
 
 
 def list_role_change_requests(status: str = None) -> list:

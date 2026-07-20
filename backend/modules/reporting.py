@@ -87,6 +87,17 @@ LOGO_PATH = Path("assets/logo.png")
 # accreditation mark image from Instruworks/the QM before relying on this.
 ISO_LOGO_PATH = Path("assets/iso_logo.png")
 
+# Exact wording as specified by Instruworks (via Jinelle, July 2026) - do
+# not paraphrase or reformat without checking with them first, since this
+# is a client-facing legal/liability statement on every certificate.
+DISCLAIMER_TEXT = (
+    "The results presented in this certificate are valid only for the instrument identified and under "
+    "the specified calibration/testing conditions. This certificate shall not be partially reproduced "
+    "without prior written consent. The laboratory's liability is limited solely to the calibration/testing "
+    "performed and does not extend to the use or interpretation of the results. Certificates are in line "
+    "ISO 9001, ISO 17025 Calibration and Testing Standards."
+)
+
 LEFT_MARGIN = 20 * mm
 RIGHT_MARGIN = 20 * mm
 TOP_MARGIN = 38 * mm
@@ -819,6 +830,16 @@ def _build_paragraph_styles() -> dict[str, ParagraphStyle]:
             alignment=1,
             textColor=BLACK,
         ),
+        "disclaimer": ParagraphStyle(
+            "Disclaimer",
+            parent=base["Normal"],
+            fontName=FONT_OBLIQUE,
+            fontSize=6.5,
+            leading=8.5,
+            alignment=0,  # left-aligned - a multi-line paragraph reads
+                          # better than centered, unlike "footer" above
+            textColor=BLACK,
+        ),
     }
 
 
@@ -1310,6 +1331,11 @@ def _build_pdf_story(
         )
     )
     story.append(sig_table)
+
+    story.append(Spacer(1, 4 * mm))
+    story.append(HRFlowable(width="100%", thickness=0.25, color=BLACK))
+    story.append(Spacer(1, 2 * mm))
+    story.append(Paragraph(DISCLAIMER_TEXT, styles["disclaimer"]))
 
     return story
 

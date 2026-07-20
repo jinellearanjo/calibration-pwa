@@ -299,6 +299,29 @@ def test_report_generation_blocked_when_rejected():
     mock_gen.assert_not_called()
 
 
+def test_rejected_report_shows_the_standard_hod_message():
+    """Exact wording specified by Instruworks - the person whose session
+    got rejected should see this, not just the reviewer's raw technical
+    note by itself."""
+    _as("user-1", "Cal Tech")
+    session = {"id": SESSION_ID, "review_status": "rejected", "review_note": "Master expired 2026-01-01"}
+    with patch.object(main.database, "get_session", return_value=session):
+        resp = client.get(f"/api/sessions/{SESSION_ID}/report")
+    detail = resp.json()["detail"]
+    assert "Attention: Some readings or calibration inputs may not be accurate" in detail
+    assert "consult the concerned HOD" in detail
+    # The reviewer's specific note should still be there too, as extra detail.
+    assert "Master expired 2026-01-01" in detail
+
+
+def test_rejected_report_shows_standard_message_even_with_no_reviewer_note():
+    _as("user-1", "Cal Tech")
+    session = {"id": SESSION_ID, "review_status": "rejected", "review_note": None}
+    with patch.object(main.database, "get_session", return_value=session):
+        resp = client.get(f"/api/sessions/{SESSION_ID}/report")
+    assert "consult the concerned HOD" in resp.json()["detail"]
+
+
 def test_report_generation_proceeds_once_approved():
     _as("user-1", "Cal Tech")
     session = {"id": SESSION_ID, "review_status": "approved"}

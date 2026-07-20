@@ -32,6 +32,14 @@ from modules import validation, reporting, formula_manager
 
 app = FastAPI(title="Calibration Uncertainty Calculator API")
 
+# Exact wording as specified by Instruworks (via Jinelle, July 2026) - the
+# standard message shown to whoever owns a session when a QM/TM/MR/MD
+# rejects it on review. Do not paraphrase without checking with them first.
+SESSION_REJECTED_MESSAGE = (
+    "Attention: Some readings or calibration inputs may not be accurate. Please cross-check the data "
+    "and consult the concerned HOD for verification and approval."
+)
+
 # CORS is configured here and nowhere else.
 app.add_middleware(
     CORSMiddleware,
@@ -1548,10 +1556,10 @@ def generate_report(
             detail=f"This session is awaiting review before a certificate can be generated: {session_record.get('review_note', '')}",
         )
     elif review_status == "rejected":
-        raise HTTPException(
-            status_code=403,
-            detail=f"This session's certificate generation was rejected on review: {session_record.get('review_note', '')}",
-        )
+        detail = SESSION_REJECTED_MESSAGE
+        if session_record.get("review_note"):
+            detail += f" (Reviewer note: {session_record['review_note']})"
+        raise HTTPException(status_code=403, detail=detail)
     # review_status == "approved" falls through and generates normally.
 
     try:
