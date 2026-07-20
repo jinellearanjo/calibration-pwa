@@ -111,6 +111,29 @@ def get_session(session_id: str) -> dict:
     return response.data
 
 
+def list_flagged_sessions() -> list:
+    """Fetch every session currently awaiting full-edit-tier review, across
+    ALL users - not filtered by owner, unlike list_sessions's per-user
+    scoping in main.py. This is the reviewer's queue: a QM/TM/MR/MD needs
+    to see everyone's flagged sessions, not just their own.
+
+    Returns:
+        list: Session records with review_status == "pending_review",
+            each including the owning instrument's name/type for display.
+
+    Raises:
+        Exception: If the database query fails.
+    """
+    response = (
+        supabase.table("calibration_sessions")
+        .select("*, instruments(name, type)")
+        .eq("review_status", "pending_review")
+        .order("created_at", desc=True)
+        .execute()
+    )
+    return response.data
+
+
 def get_readings(session_id: str) -> list:
     """Fetch all readings for a calibration session.
 

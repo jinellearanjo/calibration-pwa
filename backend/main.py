@@ -310,6 +310,24 @@ def list_sessions(user_id: str = Depends(get_current_user_id)):
     return response.data
 
 
+@app.get("/api/sessions/flagged")
+def list_flagged_sessions(user_id: str = Depends(require_tier("full_edit"))):
+    """List every session currently awaiting review, across all users.
+    The reviewer's queue - restricted to full_edit tier only.
+
+    Registration order matters here: this must be declared before
+    GET /api/sessions/{session_id} below, or FastAPI would try to parse
+    "flagged" as a session_id UUID and 422 instead of matching this route.
+
+    Args:
+        user_id: UUID of the authenticated user from JWT.
+
+    Returns:
+        list: Session records with review_status == "pending_review".
+    """
+    return database.list_flagged_sessions()
+
+
 @app.get("/api/sessions/{session_id}")
 def get_session(
     session_id: UUID,

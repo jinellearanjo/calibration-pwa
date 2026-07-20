@@ -482,3 +482,95 @@ export async function submitRoleChangeRequest(requestedTitle, reason) {
     body: JSON.stringify({ requested_title: requestedTitle, reason }),
   });
 }
+
+/**
+ * List every user's profile. full_edit tier only (QM/TM/MR/MD) - the
+ * "see all activity" view.
+ */
+export async function getAllProfiles() {
+  return request("/api/profiles");
+}
+
+/**
+ * List role-change requests. full_edit tier only.
+ * @param {string} [status] - Optional filter: "pending", "approved", "denied".
+ */
+export async function listRoleChangeRequests(status) {
+  const query = status ? `?status=${encodeURIComponent(status)}` : "";
+  return request(`/api/role-requests${query}`);
+}
+
+/**
+ * Approve a pending role-change request. full_edit tier only.
+ * @param {string} requestId
+ * @param {string} [reason] - Optional reviewer note.
+ */
+export async function approveRoleChangeRequest(requestId, reason) {
+  return request(`/api/role-requests/${requestId}/approve`, {
+    method: "PUT",
+    body: JSON.stringify({ reason }),
+  });
+}
+
+/**
+ * Deny a pending role-change request. full_edit tier only. Not
+ * permanent - the requester can submit a new request afterward.
+ * @param {string} requestId
+ * @param {string} [reason] - Optional explanation shown to the requester.
+ */
+export async function denyRoleChangeRequest(requestId, reason) {
+  return request(`/api/role-requests/${requestId}/deny`, {
+    method: "PUT",
+    body: JSON.stringify({ reason }),
+  });
+}
+
+/**
+ * List every session currently awaiting review, across all users.
+ * full_edit tier only - the reviewer's queue.
+ */
+export async function getFlaggedSessions() {
+  return request("/api/sessions/flagged");
+}
+
+/**
+ * Approve a flagged session, unblocking certificate generation.
+ * full_edit tier only.
+ * @param {string} sessionId
+ * @param {string} [reviewNote] - Optional replacement note.
+ */
+export async function approveSessionReview(sessionId, reviewNote) {
+  return request(`/api/sessions/${sessionId}/review/approve`, {
+    method: "PUT",
+    body: JSON.stringify({ review_note: reviewNote }),
+  });
+}
+
+/**
+ * Reject a flagged session. Certificate generation stays blocked.
+ * full_edit tier only.
+ * @param {string} sessionId
+ * @param {string} [reviewNote] - Rejection reason shown to the technician.
+ */
+export async function rejectSessionReview(sessionId, reviewNote) {
+  return request(`/api/sessions/${sessionId}/review/reject`, {
+    method: "PUT",
+    body: JSON.stringify({ review_note: reviewNote }),
+  });
+}
+
+/**
+ * Deactivate another user's account. full_edit tier only.
+ * @param {string} userId
+ */
+export async function deactivateUserAccount(userId) {
+  return request(`/api/profiles/${userId}/deactivate`, { method: "PUT" });
+}
+
+/**
+ * Reactivate a previously deactivated account. full_edit tier only.
+ * @param {string} userId
+ */
+export async function reactivateUserAccount(userId) {
+  return request(`/api/profiles/${userId}/reactivate`, { method: "PUT" });
+}

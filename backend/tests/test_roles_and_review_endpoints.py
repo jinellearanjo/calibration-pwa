@@ -314,3 +314,26 @@ def test_report_generation_404s_when_session_missing():
     with patch.object(main.database, "get_session", return_value=None):
         resp = client.get(f"/api/sessions/{SESSION_ID}/report")
     assert resp.status_code == 404
+
+
+# ── Flagged sessions reviewer queue ───────────────────────────────────────
+
+def test_list_flagged_sessions_allowed_for_full_edit():
+    _as("reviewer-1", "MR")
+    flagged = [{"id": SESSION_ID, "review_status": "pending_review", "review_note": "Master expired"}]
+    with patch.object(main.database, "list_flagged_sessions", return_value=flagged):
+        resp = client.get("/api/sessions/flagged")
+    assert resp.status_code == 200
+    assert len(resp.json()) == 1
+
+
+def test_list_flagged_sessions_rejected_for_cert_creation_tier():
+    _as("user-1", "Cal Tech")
+    resp = client.get("/api/sessions/flagged")
+    assert resp.status_code == 403
+
+
+def test_list_flagged_sessions_rejected_for_viewer():
+    _as("user-1", "Viewer")
+    resp = client.get("/api/sessions/flagged")
+    assert resp.status_code == 403
