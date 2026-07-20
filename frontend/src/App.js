@@ -15,6 +15,7 @@ import ResultsView from "./pages/ResultsView";
 import ReportPage from "./pages/ReportPage";
 import History from "./pages/History";
 import EditSession from "./pages/EditSession";
+import Account from "./pages/Account";
 import NotFound from "./pages/NotFound";
 
 function App() {
@@ -42,6 +43,7 @@ function App() {
         <Route path="/report/:sessionId" element={<ProtectedRoute><ReportPage /></ProtectedRoute>} />
         <Route path="/history" element={<ProtectedRoute><History /></ProtectedRoute>} />
         <Route path="/edit-session" element={<ProtectedRoute><EditSession /></ProtectedRoute>} />
+        <Route path="/account" element={<ProtectedRoute><Account /></ProtectedRoute>} />
         <Route path="/" element={<Splash />} />
         <Route path="*" element={<NotFound />} />
       </Routes>

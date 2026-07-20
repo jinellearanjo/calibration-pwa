@@ -96,3 +96,29 @@ def test_get_current_user_title_reads_the_real_profile_when_present():
     with patch.object(database, "get_profile", return_value={"id": "u1", "title": "TM"}):
         title = auth.get_current_user_title(user_id="u1")
     assert title == "TM"
+
+
+# ── Account deactivation ───────────────────────────────────────────────────
+
+def test_get_current_user_id_rejects_deactivated_account():
+    """The core of the deactivation feature - a deactivated user must be
+    rejected by the universal auth dependency, not just tier-gated
+    endpoints, otherwise deactivation wouldn't actually revoke access."""
+    with patch.object(database, "get_profile", return_value={"id": "u1", "title": "Cal Tech", "is_active": False}):
+        with pytest.raises(Exception) as exc_info:
+            auth.get_current_user_id(payload={"sub": "u1"})
+    assert "403" in str(exc_info.value) or getattr(exc_info.value, "status_code", None) == 403
+
+
+def test_get_current_user_id_allows_active_account():
+    with patch.object(database, "get_profile", return_value={"id": "u1", "title": "Cal Tech", "is_active": True}):
+        result = auth.get_current_user_id(payload={"sub": "u1"})
+    assert result == "u1"
+
+
+def test_get_current_user_id_allows_account_with_no_profile_row_yet():
+    """A missing profile (e.g. pre-migration account) must not be treated
+    as deactivated - only an explicit is_active=False should reject."""
+    with patch.object(database, "get_profile", return_value=None):
+        result = auth.get_current_user_id(payload={"sub": "u1"})
+    assert result == "u1"

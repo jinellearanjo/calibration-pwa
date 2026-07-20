@@ -79,7 +79,9 @@ def test_update_my_profile_only_touches_full_name():
     with patch.object(main.database, "update_profile", return_value={"id": "user-1", "full_name": "New Name", "title": "Viewer"}) as mock_update:
         resp = client.put("/api/profile", json={"full_name": "New Name"})
     assert resp.status_code == 200
-    mock_update.assert_called_once_with("user-1", full_name="New Name")
+    mock_update.assert_called_once_with(
+        "user-1", full_name="New Name", employee_id=None, site_location=None, department=None
+    )
 
 
 def test_list_all_profiles_allowed_for_full_edit():
@@ -101,6 +103,44 @@ def test_list_all_profiles_rejected_for_cert_creation_tier():
     master instruments - Cal Tech etc. shouldn't see the activity view."""
     _as("user-1", "Cal Tech")
     resp = client.get("/api/profiles")
+    assert resp.status_code == 403
+
+
+# ── Account deactivation ───────────────────────────────────────────────────
+
+def test_deactivate_my_account_works_for_any_authenticated_user():
+    _as("user-1", "Viewer")
+    with patch.object(main.database, "update_profile") as mock_update:
+        resp = client.put("/api/profile/deactivate")
+    assert resp.status_code == 200
+    mock_update.assert_called_once_with("user-1", is_active=False)
+
+
+def test_deactivate_other_user_rejected_for_non_full_edit():
+    _as("user-1", "Cal Tech")
+    resp = client.put("/api/profiles/some-other-user/deactivate")
+    assert resp.status_code == 403
+
+
+def test_deactivate_other_user_allowed_for_full_edit():
+    _as("reviewer-1", "QM")
+    with patch.object(main.database, "update_profile") as mock_update:
+        resp = client.put("/api/profiles/target-user/deactivate")
+    assert resp.status_code == 200
+    mock_update.assert_called_once_with("target-user", is_active=False)
+
+
+def test_reactivate_user_allowed_for_full_edit():
+    _as("reviewer-1", "MD")
+    with patch.object(main.database, "update_profile") as mock_update:
+        resp = client.put("/api/profiles/target-user/reactivate")
+    assert resp.status_code == 200
+    mock_update.assert_called_once_with("target-user", is_active=True)
+
+
+def test_reactivate_user_rejected_for_non_full_edit():
+    _as("user-1", "Engineer")
+    resp = client.put("/api/profiles/target-user/reactivate")
     assert resp.status_code == 403
 
 

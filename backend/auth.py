@@ -86,6 +86,22 @@ def get_current_user_id(payload: dict = Depends(verify_token)) -> str:
             detail="User ID not found in token.",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # Deactivation check lives here (the universal auth dependency, used
+    # by every endpoint) rather than only in get_current_user_title/
+    # require_tier - otherwise a deactivated account would still be able
+    # to use any endpoint that doesn't require a specific tier (e.g. plain
+    # GET requests), which defeats the point of deactivating someone.
+    # Supabase Auth itself doesn't know about this - their JWT stays
+    # valid until it naturally expires - so this check is what actually
+    # revokes access, not anything on the Supabase Auth side.
+    profile = database.get_profile(user_id)
+    if profile is not None and profile.get("is_active") is False:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This account has been deactivated.",
+        )
+
     return user_id
 
 

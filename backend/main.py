@@ -721,20 +721,88 @@ def get_my_profile(user_id: str = Depends(get_current_user_id)):
 
 @app.put("/api/profile")
 def update_my_profile(payload: ProfileUpdate, user_id: str = Depends(get_current_user_id)):
-    """Update the current user's own display name.
+    """Update the current user's own profile fields.
 
-    Title is deliberately not editable here - see ProfileUpdate's
-    docstring. Title changes only happen via an approved role-change
-    request (see resolve_role_change_request below).
+    Title and is_active are deliberately not editable here - see
+    ProfileUpdate's docstring. Title changes only happen via an approved
+    role-change request; deactivation only via the dedicated endpoints
+    below.
 
     Args:
-        payload: The new full_name.
+        payload: The fields being changed (any subset).
         user_id: UUID of the authenticated user from JWT.
 
     Returns:
         dict: The updated profile record.
     """
-    return database.update_profile(user_id, full_name=payload.full_name)
+    return database.update_profile(
+        user_id,
+        full_name=payload.full_name,
+        employee_id=payload.employee_id,
+        site_location=payload.site_location,
+        department=payload.department,
+    )
+
+
+@app.put("/api/profile/deactivate")
+def deactivate_my_account(user_id: str = Depends(get_current_user_id)):
+    """Self-service "delete account" - actually deactivates rather than
+    deletes. Historical data (instruments, sessions, certificates) this
+    user created is completely unaffected; only their own ability to log
+    in and act is revoked (enforced in auth.get_current_user_id on every
+    subsequent request). A full_edit-tier user can reactivate the
+    account later via PUT /api/profiles/{user_id}/reactivate.
+
+    A true delete of the auth.users row was deliberately not implemented
+    - see the 2026-07-19b migration's docstring for why.
+
+    Args:
+        user_id: UUID of the authenticated user from JWT.
+
+    Returns:
+        dict: A confirmation message.
+    """
+    database.update_profile(user_id, is_active=False)
+    return {"message": "Your account has been deactivated."}
+
+
+@app.put("/api/profiles/{target_user_id}/deactivate")
+def deactivate_user_account(
+    target_user_id: str,
+    reviewer_id: str = Depends(require_tier("full_edit")),
+):
+    """Deactivate another user's account. Restricted to full_edit tier
+    only - e.g. for someone who's left the organization and can't
+    deactivate themselves.
+
+    Args:
+        target_user_id: UUID of the account to deactivate.
+        reviewer_id: UUID of the full-edit-tier user doing this, from JWT.
+
+    Returns:
+        dict: A confirmation message.
+    """
+    database.update_profile(target_user_id, is_active=False)
+    return {"message": "Account deactivated."}
+
+
+@app.put("/api/profiles/{target_user_id}/reactivate")
+def reactivate_user_account(
+    target_user_id: str,
+    reviewer_id: str = Depends(require_tier("full_edit")),
+):
+    """Reactivate a previously deactivated account. Restricted to
+    full_edit tier only.
+
+    Args:
+        target_user_id: UUID of the account to reactivate.
+        reviewer_id: UUID of the full-edit-tier user doing this, from JWT.
+
+    Returns:
+        dict: A confirmation message.
+    """
+    database.update_profile(target_user_id, is_active=True)
+    return {"message": "Account reactivated."}
 
 
 @app.get("/api/profiles")

@@ -881,7 +881,15 @@ def list_profiles() -> list:
     return response.data
 
 
-def update_profile(user_id: str, full_name: str = None, title: str = None) -> dict:
+def update_profile(
+    user_id: str,
+    full_name: str = None,
+    title: str = None,
+    employee_id: str = None,
+    site_location: str = None,
+    department: str = None,
+    is_active: bool = None,
+) -> dict:
     """Update a user's profile.
 
     Only the fields actually provided are updated. Role/title changes
@@ -889,12 +897,18 @@ def update_profile(user_id: str, full_name: str = None, title: str = None) -> di
     (see update_role_change_request below) rather than calling this
     directly with a new title - this function itself doesn't enforce
     that; main.py's endpoints are what decide when a direct title change
-    is allowed (e.g. approving a request) versus not.
+    is allowed (e.g. approving a request) versus not. Similarly,
+    is_active is meant to be set via main.py's dedicated deactivate/
+    reactivate endpoints, not arbitrary profile edits.
 
     Args:
         user_id: The UUID of the user whose profile to update.
         full_name: New display name, if changing.
         title: New job title, if changing.
+        employee_id: New employee ID / payroll number, if changing.
+        site_location: New site/facility location, if changing.
+        department: New assigned lab/department, if changing.
+        is_active: New active status, if changing.
 
     Returns:
         dict: The updated profile record.
@@ -907,6 +921,14 @@ def update_profile(user_id: str, full_name: str = None, title: str = None) -> di
         updates["full_name"] = full_name
     if title is not None:
         updates["title"] = title
+    if employee_id is not None:
+        updates["employee_id"] = employee_id
+    if site_location is not None:
+        updates["site_location"] = site_location
+    if department is not None:
+        updates["department"] = department
+    if is_active is not None:
+        updates["is_active"] = is_active
     response = supabase.table("profiles").update(updates).eq("id", user_id).execute()
     return response.data
 

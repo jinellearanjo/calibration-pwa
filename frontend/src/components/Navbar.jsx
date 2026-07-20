@@ -19,6 +19,7 @@ function Navbar() {
     { label: "Dashboard", path: "/dashboard" },
     { label: "History", path: "/history" },
     { label: "Edit Session", path: "/edit-session" },
+    { label: "Account", path: "/account" },
   ];
 
   return (

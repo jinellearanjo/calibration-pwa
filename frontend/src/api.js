@@ -422,7 +422,14 @@ export async function downloadReport(sessionId, format) {
     `${BASE_URL}/api/sessions/${sessionId}/report?format=${format}`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
-  if (!response.ok) throw new Error("Failed to generate report.");
+  if (!response.ok) {
+    // Surface the backend's actual reason (e.g. "This session has been
+    // flagged for review... A QM/TM/MR/MD needs to approve it first.")
+    // rather than a generic message - this is the only place a person
+    // would ever see why their report didn't generate.
+    const error = await response.json().catch(() => ({ detail: "Failed to generate report." }));
+    throw new Error(error.detail || "Failed to generate report.");
+  }
 
   // Trigger browser download from the streamed file response.
   const blob = await response.blob();
@@ -432,4 +439,46 @@ export async function downloadReport(sessionId, format) {
   link.download = `calibration_certificate.${format === "excel" ? "xlsx" : "pdf"}`;
   link.click();
   window.URL.revokeObjectURL(url);
+}
+
+// ── Profile / roles ──────────────────────────────────────────────────────────
+
+/**
+ * Fetch the current user's own profile.
+ * @returns {Promise<Object>} Profile record (full_name, title, employee_id, site_location, department).
+ */
+export async function getMyProfile() {
+  return request("/api/profile");
+}
+
+/**
+ * Update the current user's own profile fields (name, employee ID, site
+ * location, department). Title changes go through submitRoleChangeRequest
+ * instead - see below.
+ * @param {Object} fields - Any subset of {full_name, employee_id, site_location, department}.
+ */
+export async function updateMyProfile(fields) {
+  return request("/api/profile", { method: "PUT", body: JSON.stringify(fields) });
+}
+
+/**
+ * Deactivate the current user's own account ("delete account" in the UI -
+ * see the 2026-07-19b migration for why this deactivates rather than
+ * truly deletes). Historical data this user created is unaffected; only
+ * their own ability to log in and act is revoked.
+ */
+export async function deactivateMyAccount() {
+  return request("/api/profile/deactivate", { method: "PUT" });
+}
+
+/**
+ * Submit a request to be granted a different job title.
+ * @param {string} requestedTitle - One of the requestable titles (not Viewer).
+ * @param {string} [reason] - Optional explanation shown to the reviewer.
+ */
+export async function submitRoleChangeRequest(requestedTitle, reason) {
+  return request("/api/role-requests", {
+    method: "POST",
+    body: JSON.stringify({ requested_title: requestedTitle, reason }),
+  });
 }

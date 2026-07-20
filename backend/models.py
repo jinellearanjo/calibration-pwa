@@ -466,11 +466,23 @@ class ProfileUpdate(BaseModel):
     """Pydantic model for updating a user's own profile.
 
     Attributes:
-        full_name: New display name. Title is deliberately NOT editable
-            here - title changes only happen via an approved
-            RoleChangeRequestCreate, handled by a full-edit-tier user.
+        full_name: New display name.
+        employee_id: Employee ID / payroll number - free text, display-only.
+        site_location: Site/facility location - free text, display-only.
+        department: Assigned lab/department - free text, display-only.
+
+    Title is deliberately NOT editable here - title changes only happen
+    via an approved RoleChangeRequestCreate, handled by a full-edit-tier
+    user. is_active is also not editable here - see the dedicated
+    deactivate/reactivate endpoints in main.py.
+
+    All fields are optional so a partial update (e.g. just changing
+    site_location) doesn't require resending everything else.
     """
-    full_name: str
+    full_name: Optional[str] = None
+    employee_id: Optional[str] = None
+    site_location: Optional[str] = None
+    department: Optional[str] = None
 
 
 class RoleChangeRequestCreate(BaseModel):
