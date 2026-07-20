@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
+import Navbar from "../components/Navbar";
 import {
   getMyProfile,
   getAllProfiles,
@@ -137,24 +138,34 @@ function Reviews() {
   };
 
   if (checkingAccess) {
-    return <div style={{ padding: 32 }}>Loading...</div>;
+    return (
+      <>
+        <Navbar />
+        <div style={{ padding: 32 }}>Loading...</div>
+      </>
+    );
   }
 
   if (!hasAccess) {
     return (
-      <div style={{ maxWidth: 480, margin: "80px auto", padding: 24, textAlign: "center" }}>
-        <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>Access Restricted</h2>
-        <p style={{ fontSize: 13, color: "var(--color-muted)", marginBottom: 16 }}>
-          This page is only available to QM, TM, MR, and MD. Your current title is{" "}
-          <strong>{myTitle || "Viewer"}</strong>. Request a different job title from your{" "}
-          <Link to="/account">Account</Link> page if you believe this is wrong.
-        </p>
-      </div>
+      <>
+        <Navbar />
+        <div style={{ maxWidth: 480, margin: "80px auto", padding: 24, textAlign: "center" }}>
+          <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>Access Restricted</h2>
+          <p style={{ fontSize: 13, color: "var(--color-muted)", marginBottom: 16 }}>
+            This page is only available to QM, TM, MR, and MD. Your current title is{" "}
+            <strong>{myTitle || "Viewer"}</strong>. Request a different job title from your{" "}
+            <Link to="/account">Account</Link> page if you believe this is wrong.
+          </p>
+        </div>
+      </>
     );
   }
 
   return (
-    <div style={{ maxWidth: 900, margin: "0 auto", padding: "32px 24px" }}>
+    <>
+      <Navbar />
+      <div style={{ maxWidth: 900, margin: "0 auto", padding: "32px 24px" }}>
       <h1 style={{ fontSize: 22, fontWeight: 600, color: "var(--color-primary)", marginBottom: 4 }}>Reviews</h1>
       <p style={{ fontSize: 13, color: "var(--color-muted)", marginBottom: 32 }}>
         Pending job-title requests, flagged sessions, and account activity.
@@ -263,7 +274,8 @@ function Reviews() {
         )}
         {profileActionError && <p style={{ fontSize: 13, color: "var(--color-error)", marginTop: 8 }}>{profileActionError}</p>}
       </section>
-    </div>
+      </div>
+    </>
   );
 }
 

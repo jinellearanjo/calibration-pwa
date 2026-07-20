@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import Navbar from "../components/Navbar";
 import { getMyProfile, updateMyProfile, deactivateMyAccount, submitRoleChangeRequest } from "../api";
 import { signOut } from "../auth";
 
@@ -106,13 +107,20 @@ function Account() {
   };
 
   if (loading) {
-    return <AccountSkeleton />;
+    return (
+      <>
+        <Navbar />
+        <AccountSkeleton />
+      </>
+    );
   }
 
   const requestTitleOptions = requestGroup ? REQUESTABLE_TITLE_GROUPS[requestGroup] : [];
 
   return (
-    <div style={{ maxWidth: 640, margin: "0 auto", padding: "32px 24px" }}>
+    <>
+      <Navbar />
+      <div style={{ maxWidth: 640, margin: "0 auto", padding: "32px 24px" }}>
       <h1 style={{ fontSize: 22, fontWeight: 600, color: "var(--color-primary)", marginBottom: 4 }}>Account</h1>
       <p style={{ fontSize: 13, color: "var(--color-muted)", marginBottom: 32 }}>
         Job title: <strong>{profile?.title || "Viewer"}</strong> - to change it, submit a request below.
@@ -192,7 +200,8 @@ function Account() {
           </div>
         )}
       </section>
-    </div>
+      </div>
+    </>
   );
 }
 
