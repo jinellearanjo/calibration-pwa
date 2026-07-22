@@ -142,6 +142,11 @@ function InstrumentForm() {
 
   const requiredRef = ["certificate_number", "date_of_calibration", "cal_due_date", "item_received_date", "date_of_issue", "customer_name", "customer_address"];
   const requiredUuc = ["name", "type", "make", "model", "serial_number", "accuracy_class", "resolution", "unit", "range_min", "range_max"];
+  // Optional UUC fields: left blank, these must be sent as null (not "")
+  // so the report generator can correctly omit them from the certificate
+  // instead of rendering an empty row. See reporting.py's
+  // _present_optional_instrument_fields.
+  const optionalUuc = ["tag_number", "calibration_carried_at", "dial_size", "mounting_orientation", "instrument_location", "medium_used"];
 
   function validate(field, value) {
     const numericFields = ["accuracy_class", "resolution", "range_min", "range_max"];
@@ -204,9 +209,21 @@ function InstrumentForm() {
     try {
       let instrumentId;
 
+      // uucData holds "" for any optional field the user left blank (that's
+      // just how controlled inputs default). Convert those to null right
+      // before submit so the backend stores "not filled in" as null rather
+      // than an empty string - otherwise the certificate renders a blank
+      // row for a field the technician never touched. Required fields are
+      // left untouched since they've already been validated as non-empty.
+      const submissionUucData = { ...uucData };
+      optionalUuc.forEach(field => {
+        const value = submissionUucData[field];
+        submissionUucData[field] = typeof value === "string" && value.trim() === "" ? null : value;
+      });
+
       if (editMode) {
         // Update existing instrument
-        await updateInstrument(editInstrumentId, uucData);
+        await updateInstrument(editInstrumentId, submissionUucData);
         instrumentId = editInstrumentId;
         // Update or create calibration reference
         try {
@@ -220,7 +237,7 @@ function InstrumentForm() {
         // requires a session_id, and no session exists until SessionForm's
         // own submit. Carry refData forward via navigation state; SessionForm
         // submits it once the new session's id is available.
-        const created = await createInstrument(uucData);
+        const created = await createInstrument(submissionUucData);
         instrumentId = created?.[0]?.id;
       }
 
