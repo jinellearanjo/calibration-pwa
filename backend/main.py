@@ -44,6 +44,18 @@ SESSION_REJECTED_MESSAGE = (
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
+    # In addition to the exact-match list above (which always includes
+    # localhost:3000 - see config.py), allow ANY localhost port during
+    # local dev. Create React App silently bumps to 3001, 3002, etc.
+    # whenever the previous port is already taken (e.g. another dev
+    # server still running), and the hardcoded exact-match fallback only
+    # ever covered 3000 - causing a real, reproducible bug where a
+    # developer's OWN machine rejects its OWN frontend with a genuine
+    # (not masked-crash) CORS 400, purely because of which port happened
+    # to be free that day. Safe as a regex here specifically because it's
+    # scoped to localhost - an attacker already on the developer's own
+    # machine has bigger problems than CORS.
+    allow_origin_regex=r"^http://localhost:\d+$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
