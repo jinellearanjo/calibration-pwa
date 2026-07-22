@@ -317,6 +317,40 @@ class ReportData:
     final_applied_uncertainty: Any = None
 
 
+def _present_optional_instrument_fields(report_data) -> list[tuple[str, Any]]:
+    """Return only the optional instrument-detail fields that were
+    actually filled in at registration, as (label, raw_value) pairs.
+
+    models.InstrumentCreate declares tag_number, dial_size, mounting_
+    orientation, instrument_location, and medium_used as
+    Optional[str] = None - most instruments never set most of these
+    (e.g. dial_size only applies to analog gauges). Previously every
+    certificate showed all of them regardless, with an em-dash placeholder
+    for whichever ones a given instrument never had - this filters down
+    to only the ones with a real value, so the certificate doesn't show
+    "Dial Size: -" for an instrument that was never analog in the first
+    place. Shared by both the PDF and Excel generators so this list only
+    needs to be maintained in one place, not two.
+
+    Args:
+        report_data: A populated ReportData instance.
+
+    Returns:
+        list[tuple[str, Any]]: (label, raw_value) pairs for only the
+            fields that are not None. Caller applies its own value
+            formatting (e.g. _safe_str for PDF).
+    """
+    candidates = [
+        ("Tag Number", report_data.instrument_tag_number),
+        ("Dial Size", report_data.instrument_dial_size),
+        ("Mounting Orientation", report_data.instrument_mounting_orientation),
+        ("Location", report_data.instrument_location),
+        ("Medium", report_data.instrument_medium_used),
+        ("Calibration Carried At", report_data.instrument_calibration_carried_at),
+    ]
+    return [(label, value) for label, value in candidates if value is not None]
+
+
 def _resolve_approver(session_record: dict) -> tuple[str | None, str | None]:
     """Resolve the certificate's "Approved By" name/title from a session
     record, if applicable.
@@ -1208,23 +1242,31 @@ def _build_pdf_story(
         pdf_cal_range_display = (
             f"{report_data.instrument_range_min} to {report_data.instrument_range_max}{unit_suffix}"
         )
+
+    # Always-shown rows: these are required fields at instrument
+    # registration (models.InstrumentCreate), so a None here would
+    # itself be a data problem, not a normal "left blank" case.
+    instrument_rows = [
+        ("Instrument Name:", _safe_str(report_data.instrument_name)),
+        ("Make:", _safe_str(report_data.instrument_make)),
+        ("Model:", _safe_str(report_data.instrument_model)),
+        ("Serial Number:", _safe_str(report_data.instrument_serial_number)),
+        ("Cal Range:", _safe_str(pdf_cal_range_display)),
+        ("Resolution:", _safe_str(report_data.instrument_resolution)),
+        ("Accuracy:", _safe_str(report_data.instrument_accuracy_class)),
+    ]
+    # Optional rows (models.InstrumentCreate declares each Optional[str] =
+    # None): omitted entirely when not filled in at registration, rather
+    # than showing "Dial Size: —" for every instrument that never had
+    # one. Only appear on the certificate when the technician actually
+    # provided a value. See _present_optional_instrument_fields's
+    # docstring - shared with the Excel generator below.
+    for label, raw_value in _present_optional_instrument_fields(report_data):
+        instrument_rows.append((f"{label}:", _safe_str(raw_value)))
+
     story.append(
         _build_kv_table(
-            [
-                ("Instrument Name:", _safe_str(report_data.instrument_name)),
-                ("Make:", _safe_str(report_data.instrument_make)),
-                ("Model:", _safe_str(report_data.instrument_model)),
-                ("Serial Number:", _safe_str(report_data.instrument_serial_number)),
-                ("Tag Number:", _safe_str(report_data.instrument_tag_number)),
-                ("Cal Range:", _safe_str(pdf_cal_range_display)),
-                ("Resolution:", _safe_str(report_data.instrument_resolution)),
-                ("Accuracy:", _safe_str(report_data.instrument_accuracy_class)),
-                ("Dial Size:", _safe_str(report_data.instrument_dial_size)),
-                ("Mounting Orientation:", _safe_str(report_data.instrument_mounting_orientation)),
-                ("Location:", _safe_str(report_data.instrument_location)),
-                ("Medium:", _safe_str(report_data.instrument_medium_used)),
-                ("Calibration Carried At:", _safe_str(report_data.instrument_calibration_carried_at)),
-            ],
+            instrument_rows,
             styles,
             [label_col_narrow, value_col_narrow],
         )
@@ -1639,21 +1681,25 @@ def generate_excel_report(session_id: str) -> FileResponse:
             f"{report_data.instrument_range_min} to {report_data.instrument_range_max}{unit_suffix}"
         )
 
+    # Always-shown rows - see the PDF generator's identical comment above
+    # for why these specifically are never skipped.
     for label, value in [
         ("Instrument Name", report_data.instrument_name),
         ("Make", report_data.instrument_make),
         ("Model", report_data.instrument_model),
         ("Serial Number", report_data.instrument_serial_number),
-        ("Tag Number", report_data.instrument_tag_number),
         ("Cal Range", cal_range_display),
         ("Resolution", report_data.instrument_resolution),
         ("Accuracy", report_data.instrument_accuracy_class),
-        ("Dial Size", report_data.instrument_dial_size),
-        ("Mounting Orientation", report_data.instrument_mounting_orientation),
-        ("Location", report_data.instrument_location),
-        ("Medium", report_data.instrument_medium_used),
-        ("Calibration Carried At", report_data.instrument_calibration_carried_at),
     ]:
+        write_label_value(current_row, label, value)
+        current_row += 1
+
+    # Optional rows: skipped entirely when not filled in at registration,
+    # rather than writing a blank/placeholder row for every instrument
+    # that never had one. See _present_optional_instrument_fields's
+    # docstring - shared with the PDF generator above.
+    for label, value in _present_optional_instrument_fields(report_data):
         write_label_value(current_row, label, value)
         current_row += 1
 

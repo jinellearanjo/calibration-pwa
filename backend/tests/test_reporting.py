@@ -26,6 +26,7 @@ from modules.reporting import (
     ReportData,
     _build_readings_blocks,
     _build_uncertainty_budget_blocks,
+    _present_optional_instrument_fields,
 )
 
 
@@ -43,6 +44,56 @@ def _make_report_data(instrument_type: str, **overrides) -> ReportData:
     base["instrument_type"] = instrument_type
     base.update(overrides)
     return ReportData(**base)
+
+
+# ── _present_optional_instrument_fields: omit blank optional fields ───────
+
+def test_all_optional_fields_present_when_filled_in():
+    report_data = _make_report_data("Pressure")  # fixture fills every field with a placeholder string
+    result = _present_optional_instrument_fields(report_data)
+    labels = [label for label, _ in result]
+    assert labels == [
+        "Tag Number", "Dial Size", "Mounting Orientation",
+        "Location", "Medium", "Calibration Carried At",
+    ]
+
+
+def test_blank_optional_field_is_omitted_not_shown_as_placeholder():
+    """The actual reported request: an instrument registered without a
+    dial size (e.g. a digital gauge, not analog) should not show a
+    'Dial Size: -' row on the certificate at all."""
+    report_data = _make_report_data("Pressure", instrument_dial_size=None)
+    result = _present_optional_instrument_fields(report_data)
+    labels = [label for label, _ in result]
+    assert "Dial Size" not in labels
+    assert len(result) == 5  # the other 5 optional fields still present
+
+
+def test_all_optional_fields_blank_returns_empty_list():
+    report_data = _make_report_data(
+        "Pressure",
+        instrument_tag_number=None,
+        instrument_dial_size=None,
+        instrument_mounting_orientation=None,
+        instrument_location=None,
+        instrument_medium_used=None,
+        instrument_calibration_carried_at=None,
+    )
+    result = _present_optional_instrument_fields(report_data)
+    assert result == []
+
+
+def test_required_instrument_fields_are_not_touched_by_this_helper():
+    """Sanity check: this helper only ever looks at the 6 genuinely
+    optional fields - it must never be able to accidentally omit a
+    required field like instrument_name, even if that field were
+    somehow None."""
+    report_data = _make_report_data("Pressure")
+    result = _present_optional_instrument_fields(report_data)
+    labels = [label for label, _ in result]
+    assert "Instrument Name" not in labels
+    assert "Make" not in labels
+    assert "Serial Number" not in labels
 
 
 # ── _build_readings_blocks: category-aware shape ──────────────────────────
