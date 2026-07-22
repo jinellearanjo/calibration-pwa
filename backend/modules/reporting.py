@@ -18,8 +18,9 @@ Rules enforced throughout
 * Page numbers appear in the footer of every PDF page.
 * If assets/logo.png exists it is drawn top-left in the PDF header; if
   absent it is silently skipped — no exception is raised. Same pattern for
-  assets/iso_logo.png (the ISO 9001/17025 accreditation mark), drawn
-  top-right.
+  assets/iso9001.jpg and assets/iso17025.png (drawn top-right, side by
+  side, each sized to its own real aspect ratio - 9001 rectangular,
+  17025 square).
 * Report files are never stored on the server: file is generated, streamed,
   then deleted via a background task attached to the FileResponse.
 * Sessions with status REJECTED raise ValueError before any file is created.
@@ -79,13 +80,16 @@ logger = logging.getLogger(__name__)
 
 PAGE_WIDTH, PAGE_HEIGHT = A4
 LOGO_PATH = Path("assets/logo.png")
-# Combined ISO 9001 + ISO 17025 accreditation mark, drawn top-right of the
+# ISO 9001 and ISO 17025 marks, drawn side by side top-right of the
 # certificate header (IW's own logo stays top-left, drawn via LOGO_PATH
-# above). Same defensive "if it exists, draw it; if not, skip silently"
-# pattern - drop a file at this path to activate it, nothing else to wire
-# up. No such file exists in this repo as of this change; obtain the real
-# accreditation mark image from Instruworks/the QM before relying on this.
-ISO_LOGO_PATH = Path("assets/iso_logo.png")
+# above). Two separate files rather than one combined image, since they
+# have genuinely different native aspect ratios (9001 is rectangular,
+# 17025 is square) - forcing them into one shared image would distort
+# one or the other. Same defensive "if it exists, draw it; if not, skip
+# silently" pattern as LOGO_PATH - drop a file at each path to activate
+# it, nothing else to wire up.
+ISO_9001_LOGO_PATH = Path("assets/iso9001.jpg")
+ISO_17025_LOGO_PATH = Path("assets/iso17025.png")
 
 # Exact wording as specified by Instruworks (via Jinelle, July 2026) - do
 # not paraphrase or reformat without checking with them first, since this
@@ -96,6 +100,16 @@ DISCLAIMER_TEXT = (
     "without prior written consent. The laboratory's liability is limited solely to the calibration/testing "
     "performed and does not extend to the use or interpretation of the results. Certificates are in line "
     "ISO 9001, ISO 17025 Calibration and Testing Standards."
+)
+
+# Standard language explaining the absence of a physical signature next
+# to "Approved By" - the certificate is approved electronically through
+# the review workflow (see _resolve_approver and calibration_sessions.
+# review_status), not signed by hand, so this note sits directly beside
+# that field rather than buried in the general disclaimer paragraph above.
+DIGITAL_APPROVAL_NOTE = (
+    "This certificate has been digitally approved through the calibration management system. "
+    "As such, a physical signature of the approving authority is not required for validity."
 )
 
 LEFT_MARGIN = 20 * mm
@@ -970,23 +984,51 @@ def _build_header_footer_callback(
                     exc_info=True,
                 )
 
-        if ISO_LOGO_PATH.exists():
+        # ISO 17025 (square) sits at the far right edge; ISO 9001
+        # (rectangular, wider) sits immediately to its left with a small
+        # gap. Sized to each mark's own real aspect ratio rather than
+        # forcing both into one shared box - see ISO_9001_LOGO_PATH's
+        # comment above for why they're two files, not one.
+        iso_17025_size = 12 * mm
+        iso_9001_width = 26 * mm
+        iso_9001_height = 12 * mm
+        iso_gap = 3 * mm
+
+        if ISO_17025_LOGO_PATH.exists():
             try:
-                iso_logo_width = 28 * mm
                 canvas_obj.drawImage(
-                    str(ISO_LOGO_PATH),
-                    PAGE_WIDTH - RIGHT_MARGIN - iso_logo_width,
-                    header_baseline - 12 * mm,
-                    width=iso_logo_width,
-                    height=12 * mm,
+                    str(ISO_17025_LOGO_PATH),
+                    PAGE_WIDTH - RIGHT_MARGIN - iso_17025_size,
+                    header_baseline - iso_17025_size,
+                    width=iso_17025_size,
+                    height=iso_17025_size,
                     preserveAspectRatio=True,
                     mask="auto",
                 )
             except Exception:
-                # Same defensive handling as the IW logo above.
+                # A corrupt or unsupported logo must never abort the certificate.
                 logger.warning(
-                    "ISO logo exists at %s but could not be drawn; skipping.",
-                    ISO_LOGO_PATH,
+                    "ISO 17025 logo exists at %s but could not be drawn; skipping.",
+                    ISO_17025_LOGO_PATH,
+                    exc_info=True,
+                )
+
+        if ISO_9001_LOGO_PATH.exists():
+            try:
+                canvas_obj.drawImage(
+                    str(ISO_9001_LOGO_PATH),
+                    PAGE_WIDTH - RIGHT_MARGIN - iso_17025_size - iso_gap - iso_9001_width,
+                    header_baseline - iso_9001_height,
+                    width=iso_9001_width,
+                    height=iso_9001_height,
+                    preserveAspectRatio=True,
+                    mask="auto",
+                )
+            except Exception:
+                # Same defensive handling as above.
+                logger.warning(
+                    "ISO 9001 logo exists at %s but could not be drawn; skipping.",
+                    ISO_9001_LOGO_PATH,
                     exc_info=True,
                 )
 
@@ -1331,6 +1373,9 @@ def _build_pdf_story(
         )
     )
     story.append(sig_table)
+
+    story.append(Spacer(1, 1.5 * mm))
+    story.append(Paragraph(DIGITAL_APPROVAL_NOTE, styles["disclaimer"]))
 
     story.append(Spacer(1, 4 * mm))
     story.append(HRFlowable(width="100%", thickness=0.25, color=BLACK))
